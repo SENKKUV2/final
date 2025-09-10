@@ -2,18 +2,20 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabase";
 import Navbar from "./Navbar";
+import { useAuth } from "./AuthContext";
+import Chatbot from "./AI/Chatbot";
+import { FaRobot } from "react-icons/fa";
 
 function Profile() {
-  const [user, setUser] = useState(null);
+  const { user, setUser } = useAuth(); // Use global user state from AuthContext
   const [profile, setProfile] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loadingUser, setLoadingUser] = useState(true);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingBookings, setLoadingBookings] = useState(true);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [isLogin, setIsLogin] = useState(true);
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false); // Chatbot state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [activeTab, setActiveTab] = useState('active');
+  const [activeTab, setActiveTab] = useState('status');
   const [profileData, setProfileData] = useState({
     full_name: '',
     first_name: '',
@@ -34,6 +36,17 @@ function Profile() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    const getUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setUser(user ?? null);
+        setLoadingUser(false);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        setLoadingUser(false);
+      }
+    };
+
     getUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -41,25 +54,23 @@ function Profile() {
         setUser(session?.user ?? null);
         if (session?.user) {
           fetchProfile(session.user.id);
+        } else {
+          setLoadingProfile(false);
         }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [setUser]);
 
   useEffect(() => {
     if (user) {
       fetchProfile(user.id);
       fetchBookings();
+    } else {
+      window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }));
     }
   }, [user]);
-
-  const getUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    setUser(user);
-    setLoadingUser(false);
-  };
 
   const fetchProfile = async (userId) => {
     try {
@@ -226,17 +237,19 @@ function Profile() {
     const today = now.toISOString().split('T')[0];
     
     switch (activeTab) {
-      case 'active':
+      case 'status':
+        // Show pending and confirmed bookings (current/future)
         return bookings.filter(booking => 
-          booking.status === 'confirmed' && booking.booking_date >= today
+          (booking.status === 'pending' || booking.status === 'confirmed') && 
+          booking.booking_date >= today
         );
-      case 'pending':
-        return bookings.filter(booking => booking.status === 'pending');
       case 'history':
+        // Show completed bookings (past confirmed bookings)
         return bookings.filter(booking => 
           booking.status === 'confirmed' && booking.booking_date < today
         );
-      case 'cancelled':
+      case 'cancel-request':
+        // Show cancelled bookings
         return bookings.filter(booking => booking.status === 'cancelled');
       default:
         return bookings;
@@ -293,10 +306,17 @@ function Profile() {
   };
 
   const getBookingStats = () => {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
     return {
-      active: bookings.filter(b => b.status === 'confirmed' && b.booking_date >= new Date().toISOString().split('T')[0]).length,
-      pending: bookings.filter(b => b.status === 'pending').length,
-      history: bookings.filter(b => b.status === 'confirmed' && b.booking_date < new Date().toISOString().split('T')[0]).length,
+      status: bookings.filter(b => 
+        (b.status === 'pending' || b.status === 'confirmed') && 
+        b.booking_date >= today
+      ).length,
+      history: bookings.filter(b => 
+        b.status === 'confirmed' && b.booking_date < today
+      ).length,
       cancelled: bookings.filter(b => b.status === 'cancelled').length
     };
   };
@@ -315,15 +335,23 @@ function Profile() {
         <Navbar
           user={user}
           onLogout={handleLogoutClick}
-          onLoginClick={() => { setShowAuthModal(true); setIsLogin(true); }}
-          onSignupClick={() => { setShowAuthModal(true); setIsLogin(false); }}
+          onLoginClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))}
+          onSignupClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: false } }))}
+          onChatbotClick={() => setIsChatbotOpen(!isChatbotOpen)}
         />
+        <Chatbot user={user} isOpen={isChatbotOpen} setIsOpen={setIsChatbotOpen} />
+        <button
+          onClick={() => setIsChatbotOpen(!isChatbotOpen)}
+          className="fixed bottom-4 right-4 bg-[#00355f] text-white p-4 rounded-full shadow-lg hover:bg-[#E91E63] transition-colors z-40"
+        >
+          <FaRobot size={24} />
+        </button>
         <div className="min-h-screen flex items-center justify-center bg-gray-100">
           <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Access Required</h2>
             <p className="text-gray-600 mb-6">Please log in to view your profile.</p>
             <button
-              onClick={() => { setShowAuthModal(true); setIsLogin(true); }}
+              onClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))}
               className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 transition duration-300"
             >
               Log In
@@ -342,9 +370,17 @@ function Profile() {
       <Navbar
         user={user}
         onLogout={handleLogoutClick}
-        onLoginClick={() => { setShowAuthModal(true); setIsLogin(true); }}
-        onSignupClick={() => { setShowAuthModal(true); setIsLogin(false); }}
+        onLoginClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))}
+        onSignupClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: false } }))}
+        onChatbotClick={() => setIsChatbotOpen(!isChatbotOpen)}
       />
+      <Chatbot user={user} isOpen={isChatbotOpen} setIsOpen={setIsChatbotOpen} />
+      <button
+        onClick={() => setIsChatbotOpen(!isChatbotOpen)}
+        className="fixed bottom-4 right-4 bg-[#00355f] text-white p-4 rounded-full shadow-lg hover:bg-[#E91E63] transition-colors z-40"
+      >
+        <FaRobot size={24} />
+      </button>
 
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
@@ -388,44 +424,28 @@ function Profile() {
           </div>
 
           {/* Booking Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-green-100 rounded-md flex items-center justify-center">
-                    <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Active</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.active}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-yellow-100 rounded-md flex items-center justify-center">
-                    <svg className="w-4 h-4 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Pending</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.pending}</p>
-                </div>
-              </div>
-            </div>
-
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-blue-100 rounded-md flex items-center justify-center">
                     <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-500">Current Bookings</p>
+                  <p className="text-2xl font-semibold text-gray-900">{stats.status}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-green-100 rounded-md flex items-center justify-center">
+                    <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                     </svg>
                   </div>
@@ -572,24 +592,14 @@ function Profile() {
             {/* Booking Tabs */}
             <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
               <button
-                onClick={() => setActiveTab('active')}
+                onClick={() => setActiveTab('status')}
                 className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'active'
+                  activeTab === 'status'
                     ? 'border-b-2 border-blue-600 text-blue-600'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Active ({stats.active})
-              </button>
-              <button
-                onClick={() => setActiveTab('pending')}
-                className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'pending'
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Pending ({stats.pending})
+                Status ({stats.status})
               </button>
               <button
                 onClick={() => setActiveTab('history')}
@@ -602,14 +612,14 @@ function Profile() {
                 History ({stats.history})
               </button>
               <button
-                onClick={() => setActiveTab('cancelled')}
+                onClick={() => setActiveTab('cancel-request')}
                 className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'cancelled'
+                  activeTab === 'cancel-request'
                     ? 'border-b-2 border-blue-600 text-blue-600'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Cancelled ({stats.cancelled})
+                Cancel Request ({stats.cancelled})
               </button>
             </div>
 
@@ -623,7 +633,11 @@ function Profile() {
                 <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
-                <p className="text-gray-600">No {activeTab} bookings found.</p>
+                <p className="text-gray-600">
+                  {activeTab === 'status' && 'No current bookings found.'}
+                  {activeTab === 'history' && 'No completed bookings found.'}
+                  {activeTab === 'cancel-request' && 'No cancelled bookings found.'}
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -634,7 +648,7 @@ function Profile() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking Info</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                      {(activeTab === 'active' || activeTab === 'pending') && (
+                      {activeTab === 'status' && (
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       )}
                     </tr>
@@ -680,6 +694,22 @@ function Profile() {
                                   <span className="font-medium">Notes:</span> {booking.special_requests}
                                 </div>
                               )}
+                              
+                              {/* Booking Details after confirmation - Show detailed info for confirmed bookings */}
+                              {booking.status === 'confirmed' && (
+                                <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                  <div className="text-xs font-semibold text-green-800 mb-2">BOOKING CONFIRMED</div>
+                                  <div className="space-y-1 text-xs text-green-700">
+                                    <div><span className="font-medium">Confirmation ID:</span> #{booking.id.slice(-8).toUpperCase()}</div>
+                                    <div><span className="font-medium">Tour Price:</span> ₱{booking.tours?.price?.toLocaleString() || 'N/A'} per person</div>
+                                    <div><span className="font-medium">Total Guests:</span> {booking.number_of_people}</div>
+                                    <div><span className="font-medium">Final Amount:</span> ₱{booking.total_price.toLocaleString()}</div>
+                                    {booking.tours?.duration && (
+                                      <div><span className="font-medium">Duration:</span> {booking.tours.duration}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -692,16 +722,26 @@ function Profile() {
                                 Awaiting confirmation
                               </div>
                             )}
-                            {booking.status === 'confirmed' && isPastDate && (
+                            {booking.status === 'confirmed' && isPastDate && activeTab === 'history' && (
                               <div className="mt-1 text-xs text-blue-600">
-                                Completed
+                                Tour Completed
+                              </div>
+                            )}
+                            {booking.status === 'confirmed' && !isPastDate && (
+                              <div className="mt-1 text-xs text-green-600">
+                                Ready for tour
+                              </div>
+                            )}
+                            {booking.status === 'cancelled' && (
+                              <div className="mt-1 text-xs text-red-600">
+                                Booking cancelled on {formatDate(booking.updated_at || booking.created_at)}
                               </div>
                             )}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-900 font-medium">
                             ₱{booking.total_price.toLocaleString()}
                           </td>
-                          {(activeTab === 'active' || activeTab === 'pending') && (
+                          {activeTab === 'status' && (
                             <td className="px-6 py-4">
                               <div className="flex flex-col gap-2">
                                 {canCancel && (
@@ -743,7 +783,7 @@ function Profile() {
             {/* Booking Status Legend */}
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="text-sm font-medium text-gray-800 mb-3">Booking Status Guide</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="flex items-center">
                   <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-yellow-600 bg-yellow-100 border-yellow-200 mr-2">
                     {getStatusIcon('pending')}
@@ -756,14 +796,7 @@ function Profile() {
                     {getStatusIcon('confirmed')}
                     Confirmed
                   </span>
-                  <span className="text-xs text-gray-600">Ready to go!</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-blue-600 bg-blue-100 border-blue-200 mr-2">
-                    {getStatusIcon('completed')}
-                    Completed
-                  </span>
-                  <span className="text-xs text-gray-600">Tour finished</span>
+                  <span className="text-xs text-gray-600">Booking confirmed & ready</span>
                 </div>
                 <div className="flex items-center">
                   <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-red-600 bg-red-100 border-red-200 mr-2">

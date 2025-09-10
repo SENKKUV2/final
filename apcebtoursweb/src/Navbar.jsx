@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
+import { FaRobot } from "react-icons/fa";
 
-function Navbar({ user, onLogout, onLoginClick, onSignupClick }) {
+function Navbar({ user, onLogout, onLoginClick, onSignupClick, onChatbotClick }) {
   const navigate = useNavigate();
 
   return (
@@ -30,6 +31,13 @@ function Navbar({ user, onLogout, onLoginClick, onSignupClick }) {
 
         {/* User Buttons */}
         <div className="flex items-center space-x-4">
+          <button
+            onClick={onChatbotClick}
+            className="text-gray-600 hover:text-[#00355f] p-2"
+            title="Chat with AI"
+          >
+            <FaRobot size={20} />
+          </button>
           {user ? (
             <div className="flex items-center space-x-4">
               <span className="text-gray-600 font-medium">

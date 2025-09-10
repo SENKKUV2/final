@@ -9,6 +9,8 @@ import { supabase } from "./lib/supabase";
 import Navbar from "./Navbar";
 import Profile from "./Profile";
 import Tours from "./Tours";
+import Chatbot from "./AI/Chatbot";
+import { FaRobot } from "react-icons/fa";
 
 function App() {
   const { user, setUser } = useAuth();
@@ -19,30 +21,33 @@ function App() {
   const [isLogin, setIsLogin] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
 
+  // Chatbot state
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
+
   // Auth form states
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [middleInitial, setMiddleInitial] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [middleInitial, setMiddleInitial] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   // Logout modal state
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Success and error modal states
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState("");
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState("");
 
   const resetAuthForm = () => {
-    setEmail('');
-    setPassword('');
-    setFirstName('');
-    setLastName('');
-    setMiddleInitial('');
-    setConfirmPassword('');
+    setEmail("");
+    setPassword("");
+    setFirstName("");
+    setLastName("");
+    setMiddleInitial("");
+    setConfirmPassword("");
   };
 
   const handleAuth = async (e) => {
@@ -51,24 +56,19 @@ function App() {
 
     try {
       if (isLogin) {
-        // Login
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
-          password
+          password,
         });
-        
         if (error) throw error;
-        
-        setSuccessMessage('Login successful!');
+        setSuccessMessage("Login successful!");
         setShowSuccessModal(true);
         setShowAuthModal(false);
         resetAuthForm();
       } else {
-        // Sign up
         if (password !== confirmPassword) {
-          throw new Error('Passwords do not match');
+          throw new Error("Passwords do not match");
         }
-
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -76,14 +76,14 @@ function App() {
             data: {
               first_name: firstName,
               last_name: lastName,
-              middle_initial: middleInitial
-            }
-          }
+              middle_initial: middleInitial,
+            },
+          },
         });
-
         if (error) throw error;
-
-        setSuccessMessage('Registration successful! Please check your email to verify your account.');
+        setSuccessMessage(
+          "Registration successful! Please check your email to verify your account."
+        );
         setShowSuccessModal(true);
         setShowAuthModal(false);
         resetAuthForm();
@@ -99,12 +99,12 @@ function App() {
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      setErrorMessage('Error logging out');
+      setErrorMessage("Error logging out");
       setShowErrorModal(true);
     } else {
       setUser(null);
       setShowLogoutModal(false);
-      setSuccessMessage('Logged out successfully');
+      setSuccessMessage("Logged out successfully");
       setShowSuccessModal(true);
       navigate("/");
     }
@@ -132,19 +132,15 @@ function App() {
         onLogout={handleLogoutClick}
         onLoginClick={handleLoginClick}
         onSignupClick={handleSignupClick}
+        onChatbotClick={() => setIsChatbotOpen(!isChatbotOpen)}
       />
 
       {/* Main Content */}
       <div className="pt-20">
         <Routes>
-          <Route 
-            path="/" 
-            element={
-              <Home 
-                user={user}
-                onLoginClick={handleLoginClick}
-              />
-            } 
+          <Route
+            path="/"
+            element={<Home user={user} onLoginClick={handleLoginClick} />}
           />
           <Route path="/tours" element={<Tours />} />
           <Route path="/bookings" element={<Bookings />} />
@@ -153,6 +149,17 @@ function App() {
           <Route path="/about" element={<About />} />
         </Routes>
       </div>
+
+      {/* Floating Chatbot Button */}
+      <button
+        onClick={() => setIsChatbotOpen(!isChatbotOpen)}
+        className="fixed bottom-4 right-4 bg-[#00355f] text-white p-4 rounded-full shadow-lg hover:bg-[#E91E63] transition-colors z-40"
+      >
+        <FaRobot size={24} />
+      </button>
+
+      {/* Chatbot Modal */}
+      <Chatbot user={user} isOpen={isChatbotOpen} setIsOpen={setIsChatbotOpen} />
 
       {/* Global Auth Modal */}
       <AuthModal
@@ -201,27 +208,27 @@ function App() {
   );
 }
 
-// Global AuthModal Component
-const AuthModal = ({ 
-  showAuthModal, 
-  setShowAuthModal, 
-  isLogin, 
-  setIsLogin, 
-  authLoading, 
-  handleAuth, 
-  email, 
-  setEmail, 
-  password, 
-  setPassword, 
-  firstName, 
+// AuthModal Component
+const AuthModal = ({
+  showAuthModal,
+  setShowAuthModal,
+  isLogin,
+  setIsLogin,
+  authLoading,
+  handleAuth,
+  email,
+  setEmail,
+  password,
+  setPassword,
+  firstName,
   setFirstName,
   lastName,
   setLastName,
   middleInitial,
   setMiddleInitial,
-  confirmPassword, 
+  confirmPassword,
   setConfirmPassword,
-  resetAuthForm
+  resetAuthForm,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -240,8 +247,8 @@ const AuthModal = ({
       <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold" style={{ color: '#00355f' }}>
-              {isLogin ? 'Sign In' : 'Create Account'}
+            <h2 className="text-2xl font-bold" style={{ color: "#00355f" }}>
+              {isLogin ? "Sign In" : "Create Account"}
             </h2>
             <button
               onClick={handleCloseModal}
@@ -388,11 +395,11 @@ const AuthModal = ({
               disabled={authLoading}
               className="w-full py-3 font-semibold rounded-lg transition-colors"
               style={{
-                backgroundColor: authLoading ? '#ccc' : '#00355f',
-                color: 'white'
+                backgroundColor: authLoading ? "#ccc" : "#00355f",
+                color: "white",
               }}
             >
-              {authLoading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
+              {authLoading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
             </button>
           </form>
 
@@ -400,9 +407,9 @@ const AuthModal = ({
             <button
               onClick={() => setIsLogin(!isLogin)}
               className="text-sm font-medium hover:underline"
-              style={{ color: '#00355f' }}
+              style={{ color: "#00355f" }}
             >
-              {isLogin ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
+              {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
             </button>
           </div>
         </div>
@@ -419,7 +426,7 @@ const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
       <div className="bg-white rounded-xl max-w-sm w-full p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
+          <h2 className="text-xl font-bold" style={{ color: "#00355f" }}>
             Confirm Logout
           </h2>
           <button
@@ -430,9 +437,7 @@ const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
             ×
           </button>
         </div>
-        <p className="text-gray-600 mb-6">
-          Are you sure you want to log out?
-        </p>
+        <p className="text-gray-600 mb-6">Are you sure you want to log out?</p>
         <div className="flex justify-end space-x-4">
           <button
             onClick={() => setShowLogoutModal(false)}
@@ -443,7 +448,7 @@ const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
           <button
             onClick={handleLogout}
             className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
+            style={{ backgroundColor: "#00355f", color: "white" }}
           >
             Logout
           </button>
@@ -461,7 +466,7 @@ const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
       <div className="bg-white rounded-xl max-w-sm w-full p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
+          <h2 className="text-xl font-bold" style={{ color: "#00355f" }}>
             Success
           </h2>
           <button
@@ -472,14 +477,12 @@ const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
             ×
           </button>
         </div>
-        <p className="text-gray-600 mb-6">
-          {message}
-        </p>
+        <p className="text-gray-600 mb-6">{message}</p>
         <div className="flex justify-end">
           <button
             onClick={() => setShowSuccessModal(false)}
             className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
+            style={{ backgroundColor: "#00355f", color: "white" }}
           >
             OK
           </button>
@@ -497,7 +500,7 @@ const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
       <div className="bg-white rounded-xl max-w-sm w-full p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
+          <h2 className="text-xl font-bold" style={{ color: "#00355f" }}>
             Error
           </h2>
           <button
@@ -508,14 +511,12 @@ const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
             ×
           </button>
         </div>
-        <p className="text-gray-600 mb-6">
-          {message}
-        </p>
+        <p className="text-gray-600 mb-6">{message}</p>
         <div className="flex justify-end">
           <button
             onClick={() => setShowErrorModal(false)}
             className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
+            style={{ backgroundColor: "#00355f", color: "white" }}
           >
             OK
           </button>
