@@ -193,7 +193,7 @@ export default function ReportsScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2E7D32" />
+          <ActivityIndicator size="large" color="#00355f" />
           <Text style={styles.loadingText}>Loading reports...</Text>
         </View>
       </SafeAreaView>
@@ -282,7 +282,7 @@ export default function ReportsScreen() {
           <Text style={styles.tableTitle}>Tours by Type & Location</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Regular Tours</Text>
+              <Text style={styles.statLabel}> Tours</Text>
               <Text style={styles.statValue}>
                 {tours.filter(t => t.type === 'regular').length}
               </Text>
@@ -318,7 +318,7 @@ export default function ReportsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#faf9f7',
+    backgroundColor: '#ffffff',
   },
   scrollView: {
     flex: 1,
@@ -331,11 +331,11 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#333',
+    color: '#00355f',
   },
   description: {
     fontSize: 16,
-    color: '#666',
+    color: '#6b7280',
     lineHeight: 22,
     marginBottom: 20,
   },
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#666',
+    color: '#6b7280',
   },
   errorContainer: {
     flex: 1,
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
   },
   errorSubtext: {
     fontSize: 14,
-    color: '#666',
+    color: '#6b7280',
     textAlign: 'center',
   },
 
@@ -381,10 +381,7 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -392,10 +389,11 @@ const styles = StyleSheet.create({
   summaryIcon: {
     fontSize: 24,
     marginBottom: 8,
+    color: '#00355f',
   },
   summaryTitle: {
     fontSize: 12,
-    color: '#666',
+    color: '#6b7280',
     textAlign: 'center',
     marginBottom: 4,
     fontWeight: '500',
@@ -403,7 +401,7 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#00355f',
     textAlign: 'center',
   },
 
@@ -414,10 +412,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 12,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -425,7 +420,7 @@ const styles = StyleSheet.create({
   chartTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#00355f',
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -446,19 +441,19 @@ const styles = StyleSheet.create({
     height: 140,
   },
   bar: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: '#eec218',
     width: 20,
     borderRadius: 4,
     marginBottom: 4,
   },
   barValue: {
     fontSize: 10,
-    color: '#333',
+    color: '#00355f',
     fontWeight: '500',
   },
   barLabel: {
     fontSize: 10,
-    color: '#666',
+    color: '#6b7280',
     marginTop: 8,
     transform: [{ rotate: '-45deg' }],
   },
@@ -469,10 +464,7 @@ const styles = StyleSheet.create({
     margin: 20,
     borderRadius: 12,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -481,36 +473,36 @@ const styles = StyleSheet.create({
   tableTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#00355f',
     padding: 20,
     paddingBottom: 16,
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f9fafb',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#6b7280',
   },
   tableHeaderText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#00355f',
   },
   tableRow: {
     flexDirection: 'row',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#f9fafb',
   },
   tableRowEven: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#f9fafb',
   },
   tableCellText: {
     fontSize: 14,
-    color: '#333',
+    color: '#6b7280',
   },
   monthColumn: {
     flex: 2,
@@ -538,14 +530,14 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
-    color: '#666',
+    color: '#6b7280',
     textAlign: 'center',
     marginBottom: 4,
   },
   statValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2E7D32',
+    color: '#eec218',
   },
 
   bottomSpacer: {

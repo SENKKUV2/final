@@ -299,13 +299,13 @@ export default function AdminDashboard() {
         });
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status.toLowerCase()) {
-            case 'pending': return '#FF9800';
-            case 'confirmed': return '#4CAF50';
-            case 'cancelled': return '#f44336';
-            case 'completed': return '#2196F3';
-            default: return '#666';
+     const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'pending': return '#eec218';
+      case 'confirmed': return '#00355f';
+      case 'cancelled': return '#ef4444';
+      case 'completed': return '#00355f';
+      default: return '#6b7280';
         }
     };
 
@@ -607,7 +607,7 @@ export default function AdminDashboard() {
     if (loading && !refreshing) {
         return (
             <View style={[styles.container, styles.loadingContainer]}>
-                <ActivityIndicator size="large" color="#f57c00" />
+                <ActivityIndicator size="large" color="#00355f" />
                 <Text style={styles.loadingText}>Loading dashboard...</Text>
             </View>
         );
@@ -625,88 +625,91 @@ export default function AdminDashboard() {
     }
 
     const statsCards = [
-        {
-            label: "Total Bookings",
-            value: stats?.totalBookings?.toString() || "0",
-            icon: "book-online",
-            color: "#4CAF50",
-            trend: stats?.bookingsTrend || "0%",
-            subtitle: "This month"
-        },
-        {
-            label: "Total Revenue",
-            value: `₱${stats?.totalRevenue?.toLocaleString() || '0'}`,
-            icon: "attach-money",
-            color: "#f57c00",
-            trend: stats?.revenueTrend || "0%",
-            subtitle: "This month"
-        },
-        {
-            label: "Available Tours",
-            value: stats?.upcomingTours?.toString() || "0",
-            icon: "tour",
-            color: "#2196F3",
-            trend: stats?.toursTrend || "0%",
-            subtitle: "Active"
-        },
-        {
-            label: "Registered Users",
-            value: stats?.activeCustomers?.toString() || "0",
-            icon: "people",
-            color: "#9C27B0",
-            trend: stats?.customersTrend || "0%",
-            subtitle: "Total"
-        },
-    ];
+    {
+      label: "Total Bookings",
+      value: stats?.totalBookings?.toString() || "0",
+      icon: "book-online",
+      color: "#00355f",
+      trend: stats?.bookingsTrend || "0%",
+      subtitle: "This month"
+    },
+    {
+      label: "Total Revenue",
+      value: `₱${stats?.totalRevenue?.toLocaleString() || '0'}`,
+      icon: "attach-money",
+      color: "#eec218",
+      trend: stats?.revenueTrend || "0%",
+      subtitle: "This month"
+    },
+    {
+      label: "Available Tours",
+      value: stats?.upcomingTours?.toString() || "0",
+      icon: "tour",
+      color: "#00355f",
+      trend: stats?.toursTrend || "0%",
+      subtitle: "Active"
+    },
+    {
+      label: "Registered Users",
+      value: stats?.activeCustomers?.toString() || "0",
+      icon: "people",
+      color: "#eec218",
+      trend: stats?.customersTrend || "0%",
+      subtitle: "Total"
+    },
+  ];
 
     return (
-        <View style={styles.container}>
-            <ScrollView 
-                showsVerticalScrollIndicator={false} 
-                contentContainerStyle={{ paddingBottom: 40 }}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                }
-            >
-                {/* Header */}
-                <View style={styles.header}>
-                    <View>
-                        <Text style={styles.headerTitle}>Admin Dashboard</Text>
-                        <Text style={styles.headerSubtitle}>Manage your tour business efficiently</Text>
-                    </View>
-                    <TouchableOpacity style={styles.notificationButton}>
-                        <MaterialIcons name="notifications-outline" size={24} color="#f57c00" />
-                        <View style={styles.notificationBadge}>
-                            <Text style={styles.badgeText}>{pendingBookings.length}</Text>
-                        </View>
-                    </TouchableOpacity>
-                </View>
+    <View style={styles.container}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.headerTitle}>Admin Dashboard</Text>
+            <Text style={styles.headerSubtitle}>Manage your tour business efficiently</Text>
+          </View>
+          <TouchableOpacity style={styles.notificationButton}>
+            <MaterialIcons name="notifications-outline" size={24} color="#00355f" />
+            <View style={styles.notificationBadge}>
+              <Text style={styles.badgeText}>{pendingBookings.length}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
 
-                {/* Stats Section */}
-                <View style={styles.statsContainer}>
-                    {statsCards.map((stat, index) => (
-                        <View key={index} style={styles.statCard}>
-                            <View style={styles.statHeader}>
-                                <View style={[styles.iconContainer, { backgroundColor: `${stat.color}15` }]}>
-                                    <MaterialIcons name={stat.icon as any} size={24} color={stat.color} />
-                                </View>
-                                <View style={styles.trendContainer}>
-                                    <MaterialIcons
-                                        name={stat.trend.startsWith('+') ? "trending-up" : "trending-down"}
-                                        size={16}
-                                        color={stat.trend.startsWith('+') ? "#4CAF50" : "#f44336"}
-                                    />
-                                    <Text style={[styles.trendText, { color: stat.trend.startsWith('+') ? "#4CAF50" : "#f44336" }]}>
-                                        {stat.trend}
-                                    </Text>
-                                </View>
-                            </View>
-                            <Text style={styles.statValue}>{stat.value}</Text>
-                            <Text style={styles.statLabel}>{stat.label}</Text>
-                            <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
-                        </View>
-                    ))}
+        {/* Stats */}
+        <View style={styles.statsContainer}>
+          {statsCards.map((stat, index) => (
+            <View key={index} style={styles.statCard}>
+              <View style={styles.statHeader}>
+                <View style={[styles.iconContainer, { backgroundColor: `${stat.color}15` }]}>
+                  <MaterialIcons name={stat.icon as any} size={24} color={stat.color} />
                 </View>
+                <View style={styles.trendContainer}>
+                  <MaterialIcons
+                    name={stat.trend.startsWith('+') ? "trending-up" : "trending-down"}
+                    size={16}
+                    color={stat.trend.startsWith('+') ? "#00355f" : "#ef4444"}
+                  />
+                  <Text style={[
+                    styles.trendText,
+                    { color: stat.trend.startsWith('+') ? "#00355f" : "#ef4444" }
+                  ]}>
+                    {stat.trend}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.statValue}>{stat.value}</Text>
+              <Text style={styles.statLabel}>{stat.label}</Text>
+              <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
+            </View>
+          ))}
+        </View>
 
                 {/* Quick Actions */}
                 <View style={styles.quickActions}>
@@ -933,7 +936,7 @@ export default function AdminDashboard() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#ffffff',
         paddingHorizontal: 20,
     },
     loadingContainer: {
@@ -942,26 +945,26 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         marginTop: 10,
-        color: '#666',
+        color: '#6b7280',
     },
     errorContainer: {
         justifyContent: 'center',
         alignItems: 'center',
     },
     errorText: {
-        color: '#f44336',
+        color: '#e63946', // red for error (kept for contrast)
         fontSize: 16,
         textAlign: 'center',
     },
     retryButton: {
         marginTop: 20,
-        backgroundColor: '#f57c00',
+        backgroundColor: '#00355f',
         paddingVertical: 10,
         paddingHorizontal: 20,
         borderRadius: 8,
     },
     retryText: {
-        color: '#fff',
+        color: '#ffffff',
         fontWeight: 'bold',
     },
     header: {
@@ -974,15 +977,15 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 28,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#00355f',
     },
     headerSubtitle: {
         fontSize: 14,
-        color: '#666',
+        color: '#6b7280',
         marginTop: 4,
     },
     notificationButton: {
-        backgroundColor: '#fff',
+        backgroundColor: '#ffffff',
         padding: 10,
         borderRadius: 24,
         elevation: 2,
@@ -995,7 +998,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 4,
         right: 4,
-        backgroundColor: '#f44336',
+        backgroundColor: '#eec218',
         borderRadius: 8,
         width: 16,
         height: 16,
@@ -1003,7 +1006,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     badgeText: {
-        color: '#fff',
+        color: '#00355f',
         fontSize: 10,
         fontWeight: 'bold',
     },
@@ -1014,7 +1017,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     statCard: {
-        backgroundColor: '#fff',
+        backgroundColor: '#ffffff',
         borderRadius: 12,
         padding: 15,
         width: '48%',
@@ -1034,6 +1037,7 @@ const styles = StyleSheet.create({
     iconContainer: {
         padding: 8,
         borderRadius: 8,
+        backgroundColor: '#f9fafb',
     },
     trendContainer: {
         flexDirection: 'row',
@@ -1043,20 +1047,21 @@ const styles = StyleSheet.create({
         marginLeft: 4,
         fontWeight: 'bold',
         fontSize: 12,
+        color: '#00355f',
     },
     statValue: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#00355f',
     },
     statLabel: {
         fontSize: 14,
-        color: '#888',
+        color: '#6b7280',
         marginTop: 4,
     },
     statSubtitle: {
         fontSize: 12,
-        color: '#aaa',
+        color: '#6b7280',
         marginTop: 2,
     },
     quickActions: {
@@ -1065,7 +1070,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#00355f',
         marginBottom: 15,
     },
     actionGrid: {
@@ -1074,7 +1079,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     quickActionCard: {
-        backgroundColor: '#fff',
+        backgroundColor: '#ffffff',
         borderRadius: 12,
         padding: 15,
         width: '48%',
@@ -1091,7 +1096,7 @@ const styles = StyleSheet.create({
         marginTop: 8,
         fontSize: 14,
         fontWeight: 'bold',
-        color: '#555',
+        color: '#6b7280',
     },
     section: {
         marginBottom: 20,
@@ -1103,11 +1108,11 @@ const styles = StyleSheet.create({
         marginBottom: 15,
     },
     viewAllText: {
-        color: '#f57c00',
+        color: '#eec218',
         fontWeight: 'bold',
     },
     bookingCard: {
-        backgroundColor: '#fff',
+        backgroundColor: '#ffffff',
         borderRadius: 12,
         padding: 15,
         flexDirection: 'row',
@@ -1131,28 +1136,30 @@ const styles = StyleSheet.create({
     },
     bookingId: {
         fontSize: 12,
-        color: '#888',
+        color: '#6b7280',
         fontWeight: 'bold',
     },
     statusBadge: {
         paddingVertical: 2,
         paddingHorizontal: 8,
         borderRadius: 10,
+        backgroundColor: '#f9fafb',
     },
     statusText: {
         fontSize: 10,
         fontWeight: 'bold',
         textTransform: 'capitalize',
+        color: '#00355f',
     },
     customerName: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#00355f',
         marginTop: 5,
     },
     tourType: {
         fontSize: 14,
-        color: '#666',
+        color: '#6b7280',
         marginTop: 2,
     },
     bookingInfo: {
@@ -1162,12 +1169,12 @@ const styles = StyleSheet.create({
     },
     bookingDate: {
         fontSize: 12,
-        color: '#666',
+        color: '#6b7280',
         marginLeft: 4,
     },
     bookingAmount: {
         fontSize: 12,
-        color: '#666',
+        color: '#6b7280',
         fontWeight: 'bold',
         marginLeft: 4,
     },
@@ -1183,19 +1190,19 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     approveButton: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#00355f',
     },
     rejectButton: {
-        backgroundColor: '#f44336',
+        backgroundColor: '#eec218',
     },
     actionText: {
-        color: '#fff',
+        color: '#ffffff',
         fontSize: 12,
         marginLeft: 4,
         fontWeight: 'bold',
     },
     noDataCard: {
-        backgroundColor: '#fff',
+        backgroundColor: '#ffffff',
         borderRadius: 12,
         padding: 20,
         alignItems: 'center',
@@ -1209,17 +1216,17 @@ const styles = StyleSheet.create({
     },
     noDataText: {
         fontSize: 16,
-        color: '#888',
+        color: '#6b7280',
         marginTop: 10,
         fontWeight: 'bold',
     },
     noDataSubtext: {
         fontSize: 12,
-        color: '#aaa',
+        color: '#6b7280',
         marginTop: 4,
     },
     manageCard: {
-        backgroundColor: '#fff',
+        backgroundColor: '#ffffff',
         borderRadius: 12,
         marginBottom: 15,
         overflow: 'hidden',
@@ -1245,26 +1252,26 @@ const styles = StyleSheet.create({
     manageTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#00355f',
         flexShrink: 1,
     },
     ratingContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#FFD70030',
+        backgroundColor: '#f9fafb',
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 10,
     },
     ratingText: {
         fontSize: 12,
-        color: '#333',
+        color: '#6b7280',
         marginLeft: 4,
         fontWeight: 'bold',
     },
     managePrice: {
         fontSize: 16,
-        color: '#f57c00',
+        color: '#eec218',
         fontWeight: 'bold',
         marginTop: 5,
     },
@@ -1281,7 +1288,7 @@ const styles = StyleSheet.create({
     },
     infoText: {
         fontSize: 12,
-        color: '#666',
+        color: '#6b7280',
         marginLeft: 4,
     },
     manageActions: {
@@ -1290,10 +1297,10 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     editButton: {
-        backgroundColor: '#2196F3',
+        backgroundColor: '#00355f',
     },
     viewButton: {
-        backgroundColor: '#666',
+        backgroundColor: '#6b7280',
     }
 });
 
@@ -1307,7 +1314,7 @@ const modalStyles = StyleSheet.create({
     modalView: {
         width: '90%',
         maxWidth: 400,
-        backgroundColor: 'white',
+        backgroundColor: '#ffffff',
         borderRadius: 16,
         padding: 15,
         shadowColor: '#000',
@@ -1315,38 +1322,38 @@ const modalStyles = StyleSheet.create({
         shadowOpacity: 0.25,
         shadowRadius: 4,
         elevation: 5,
-        maxHeight: '75%', // Limit height to make it scrollable
+        maxHeight: '75%',
     },
     modalTitle: {
         fontSize: 20,
         fontWeight: 'bold',
         marginBottom: 10,
         textAlign: 'center',
-        color: '#333',
+        color: '#00355f',
     },
     label: {
         fontSize: 13,
-        color: '#666',
+        color: '#6b7280',
         marginTop: 8,
         marginBottom: 4,
     },
     input: {
         borderWidth: 1,
-        borderColor: '#ddd',
+        borderColor: '#6b7280',
         borderRadius: 8,
         padding: 8,
         fontSize: 15,
-        color: '#333',
-        backgroundColor: '#f9f9f9',
+        color: '#00355f',
+        backgroundColor: '#f9fafb',
     },
     staticInput: {
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: '#6b7280',
         borderRadius: 8,
         padding: 10,
         fontSize: 16,
-        color: '#333',
-        backgroundColor: '#f9f9f9',
+        color: '#00355f',
+        backgroundColor: '#f9fafb',
     },
     imagePickerContainer: {
         alignItems: 'center',
@@ -1358,18 +1365,18 @@ const modalStyles = StyleSheet.create({
     },
     tourImage: {
         width: '100%',
-        height: 120, // Smaller image height
+        height: 120,
         borderRadius: 8,
         resizeMode: 'cover',
     },
     changeImageButton: {
         marginTop: 8,
         padding: 7,
-        backgroundColor: '#f57c00',
+        backgroundColor: '#00355f',
         borderRadius: 8,
     },
     changeImageText: {
-        color: '#fff',
+        color: '#ffffff',
         fontWeight: 'bold',
         fontSize: 13,
     },
@@ -1388,15 +1395,15 @@ const modalStyles = StyleSheet.create({
         flex: 1,
     },
     cancelButton: {
-        backgroundColor: '#f44336',
+        backgroundColor: '#eec218',
         marginRight: 8,
     },
     saveButton: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#00355f',
         marginLeft: 8,
     },
     closeButton: {
-        backgroundColor: '#666',
+        backgroundColor: '#6b7280',
     },
     textStyle: {
         color: 'white',

@@ -58,7 +58,7 @@ function CustomDrawerContent(props: any) {
   return (
     <SafeAreaView style={styles.drawerContainer}>
       <View style={styles.drawerHeader}>
-        <MaterialIcons name="admin-panel-settings" size={40} color="#f57c00" />
+        <MaterialIcons name="admin-panel-settings" size={40} color="#00355f" />
         <Text style={styles.drawerHeaderTitle}>Panel</Text>
         <Text style={styles.drawerHeaderSubtitle}>AP Cebu Tours</Text>
       </View>
@@ -88,7 +88,7 @@ function CustomDrawerContent(props: any) {
               <MaterialIcons
                 name={item.icon as any}
                 size={24}
-                color={isActive ? '#f57c00' : '#666'}
+                color={isActive ? '#00355f' : '#666'}
               />
               <Text
                 style={[
@@ -118,7 +118,7 @@ function CustomDrawerContent(props: any) {
         <MaterialIcons
           name="settings"
           size={24}
-          color={pathname === '/(drawer)/settings' ? '#f57c00' : '#666'}
+          color={pathname === '/(drawer)/settings' ? '#00355f' : '#666'}
         />
         <Text
           style={[
@@ -148,11 +148,11 @@ export default function DrawerLayout() {
             backgroundColor: '#faf9f7',
             elevation: 4,
             shadowOpacity: 0.1,
-            shadowColor: '#f57c00',
+            shadowColor: '#00355f',
             borderBottomWidth: 1,
-            borderBottomColor: '#ffcc80',
+            borderBottomColor: '#7ec3fcff',
           },
-          headerTintColor: '#f57c00',
+          headerTintColor: '#00355f',
           headerTitleStyle: {
             fontWeight: '600',
             fontSize: 18,
@@ -162,7 +162,7 @@ export default function DrawerLayout() {
             backgroundColor: '#faf9f7',
             width: 280,
           },
-          drawerActiveTintColor: '#f57c00',
+          drawerActiveTintColor: '#00355f',
           drawerInactiveTintColor: '#666',
           swipeEnabled: true,
           drawerPosition: 'left',

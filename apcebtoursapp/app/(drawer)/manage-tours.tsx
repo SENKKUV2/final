@@ -458,7 +458,7 @@ const filePath = `tour-images/${fileName}`;
                 disabled={imageUploading}
               >
                 {imageUploading ? (
-                  <ActivityIndicator size="large" color="#2E7D32" />
+                  <ActivityIndicator size="large" color="#00355f" />
                 ) : formData.image ? (
                   <>
                     <Image source={{ uri: formData.image }} style={styles.previewImage} />
@@ -606,7 +606,7 @@ const filePath = `tour-images/${fileName}`;
         showsVerticalScrollIndicator={false}
       >
         {loading ? (
-          <ActivityIndicator size="large" color="#2E7D32" style={{ marginTop: 50 }} />
+          <ActivityIndicator size="large" color="#00355f" style={{ marginTop: 50 }} />
         ) : filteredTours.length > 0 ? (
           <View style={styles.toursList}>{filteredTours.map(renderTourItem)}</View>
         ) : (
@@ -626,7 +626,7 @@ const filePath = `tour-images/${fileName}`;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#faf9f7',
+    backgroundColor: '#ffffff',
   },
   header: {
     padding: 20,
@@ -636,11 +636,11 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#333',
+    color: '#00355f',
   },
   description: {
     fontSize: 16,
-    color: '#666',
+    color: '#6b7280',
     lineHeight: 22,
   },
   scrollView: {
@@ -654,10 +654,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -666,7 +663,7 @@ const styles = StyleSheet.create({
   tourImage: {
     width: '100%',
     height: 200,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#f9fafb',
   },
   tourInfo: {
     padding: 16,
@@ -674,12 +671,12 @@ const styles = StyleSheet.create({
   tourTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#00355f',
     marginBottom: 4,
   },
   tourLocation: {
     fontSize: 14,
-    color: '#666',
+    color: '#6b7280',
     marginBottom: 12,
   },
   tourDetails: {
@@ -690,7 +687,7 @@ const styles = StyleSheet.create({
   tourPrice: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2E7D32',
+    color: '#eec218',
   },
   tourMeta: {
     alignItems: 'flex-end',
@@ -698,33 +695,33 @@ const styles = StyleSheet.create({
   },
   tourDuration: {
     fontSize: 14,
-    color: '#666',
-    backgroundColor: '#f5f5f5',
+    color: '#6b7280',
+    backgroundColor: '#f9fafb',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
   },
   typeTag: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#f9fafb',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
   },
   comboTag: {
-    backgroundColor: '#FFF3E0',
+    backgroundColor: '#fff8e0',
   },
   typeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1976D2',
+    color: '#00355f',
   },
   comboText: {
-    color: '#F57C00',
+    color: '#eec218',
   },
   actionButtons: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: '#f9fafb',
   },
   actionButton: {
     flex: 1,
@@ -733,20 +730,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   editButton: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#f9fafb',
     borderRightWidth: 0.5,
-    borderRightColor: '#f0f0f0',
+    borderRightColor: '#f9fafb',
   },
   deleteButton: {
-    backgroundColor: '#FFEBEE',
+    backgroundColor: '#ffebee',
   },
   editButtonText: {
-    color: '#1976D2',
+    color: '#00355f',
     fontWeight: '600',
     fontSize: 16,
   },
   deleteButtonText: {
-    color: '#D32F2F',
+    color: '#d32f2f',
     fontWeight: '600',
     fontSize: 16,
   },
@@ -757,14 +754,11 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#2E7D32',
+    backgroundColor: '#00355f',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 8,
@@ -786,10 +780,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
@@ -802,12 +793,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#333',
+    color: '#00355f',
   },
   tabsContainer: {
     flexDirection: 'row',
     marginBottom: 12,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f9fafb',
     borderRadius: 25,
     padding: 4,
   },
@@ -823,12 +814,9 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   activeTab: {
-    backgroundColor: '#2E7D32',
-    shadowColor: '#2E7D32',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    backgroundColor: '#00355f',
+    shadowColor: '#00355f',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
@@ -836,7 +824,7 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#666',
+    color: '#6b7280',
     textAlign: 'center',
     flexShrink: 1,
   },
@@ -853,7 +841,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#f9fafb',
   },
   activeBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
@@ -862,7 +850,7 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2E7D32',
+    color: '#eec218',
   },
   activeBadgeText: {
     color: '#ffffff',
@@ -871,8 +859,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
     fontSize: 16,
-    color: '#666',
+    color: '#6b7280',
   },
+
   // Modal Styles
   modalContainer: {
     flex: 1,
@@ -881,15 +870,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     width: '90%',
     maxHeight: '80%',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
+    shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 10,
@@ -903,19 +889,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#f9fafb',
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#00355f',
   },
   closeButton: {
     padding: 4,
   },
   closeButtonText: {
     fontSize: 18,
-    color: '#666',
+    color: '#6b7280',
   },
   formGroup: {
     paddingHorizontal: 20,
@@ -924,17 +910,18 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#00355f',
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#6b7280',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
+    color: '#00355f',
   },
   typeSelector: {
     flexDirection: 'row',
@@ -945,32 +932,32 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#6b7280',
     borderRadius: 8,
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
   },
   activeTypeOption: {
-    backgroundColor: '#2E7D32',
-    borderColor: '#2E7D32',
+    backgroundColor: '#00355f',
+    borderColor: '#00355f',
   },
   typeOptionText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#666',
+    color: '#6b7280',
   },
   activeTypeOptionText: {
-    color: '#fff',
+    color: '#ffffff',
   },
   imageUpload: {
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: '#6b7280',
     borderStyle: 'dashed',
     borderRadius: 12,
     padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#f9fafb',
     minHeight: 150,
   },
   previewImage: {
@@ -980,7 +967,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   changeImageText: {
-    color: '#2E7D32',
+    color: '#00355f',
     fontWeight: '500',
   },
   uploadText: {
@@ -988,7 +975,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   uploadSubText: {
-    color: '#666',
+    color: '#6b7280',
     fontSize: 16,
   },
   modalActions: {
@@ -996,7 +983,7 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: '#f9fafb',
   },
   modalButton: {
     flex: 1,
@@ -1006,19 +993,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f9fafb',
   },
   saveButton: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: '#00355f',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#666',
+    color: '#6b7280',
   },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: '#ffffff',
   },
 });

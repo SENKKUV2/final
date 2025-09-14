@@ -10,9 +10,6 @@ import Navbar from "./Navbar";
 import Profile from "./Profile";
 import Tours from "./Tours";
 
-
-
-
 function App() {
   const { user, setUser } = useAuth();
   const navigate = useNavigate();
@@ -527,7 +524,5 @@ const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
     </div>
   );
 };
-
-
 
 export default App;

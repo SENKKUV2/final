@@ -31,39 +31,31 @@ export default function AdminLoginScreen() {
     setLoading(true);
 
     try {
-      // Authenticate the user with Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password,
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       if (data.user) {
-        // Fetch the user's role from the 'profiles' table
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', data.user.id)
           .single();
 
-        // If fetching the role fails or the role is not 'admin'
         if (profileError || profileData.role !== 'admin') {
           await supabase.auth.signOut();
           Alert.alert('Access Denied', 'This email is not registered as an administrator.');
           return;
         }
 
-        // If the role check passes, navigate to the admin dashboard
         console.log('Admin logged in:', data.user.email);
         router.replace('/(drawer)');
       }
     } catch (error) {
       let errorMessage = 'Login failed. Please try again.';
-
-      // Use a type guard to ensure the error object has a message property
       if (error instanceof Error) {
         if (error.message.includes('Invalid login credentials')) {
           errorMessage = 'Invalid email or password. Please check your credentials.';
@@ -71,11 +63,8 @@ export default function AdminLoginScreen() {
           errorMessage = 'Please confirm your email address before signing in.';
         } else if (error.message.includes('Too many requests')) {
           errorMessage = 'Too many login attempts. Please wait a moment and try again.';
-        } else {
-          errorMessage = 'An unexpected error occurred. Please try again.';
         }
       }
-
       Alert.alert('Login Failed', errorMessage);
     } finally {
       setLoading(false);
@@ -84,7 +73,7 @@ export default function AdminLoginScreen() {
 
   return (
     <>
-      <StatusBar barStyle="dark-content" backgroundColor="#faf9f7" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -94,14 +83,12 @@ export default function AdminLoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.content}>
-            {/* Background Decoration */}
             <View style={styles.backgroundDecoration} />
             <View style={styles.backgroundDecorationSmall} />
 
-            {/* Header Section */}
             <View style={styles.header}>
               <View style={styles.logoContainer}>
-                <MaterialIcons name="admin-panel-settings" size={52} color="#f57c00" />
+                <MaterialIcons name="admin-panel-settings" size={52} color="#00355f" />
               </View>
               <Text style={styles.title}>Admin Panel</Text>
               <Text style={styles.subtitle}>AP Cebu Tours</Text>
@@ -110,14 +97,13 @@ export default function AdminLoginScreen() {
               </Text>
             </View>
 
-            {/* Login Form */}
             <View style={styles.form}>
               <View style={styles.inputContainer}>
-                <MaterialIcons name="email" size={22} color="#f57c00" style={styles.inputIcon} />
+                <MaterialIcons name="email" size={22} color="#00355f" style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Email address"
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6b7280"
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -128,11 +114,11 @@ export default function AdminLoginScreen() {
               </View>
 
               <View style={styles.inputContainer}>
-                <MaterialIcons name="lock" size={22} color="#f57c00" style={styles.inputIcon} />
+                <MaterialIcons name="lock" size={22} color="#00355f" style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Password"
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6b7280"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -151,11 +137,10 @@ export default function AdminLoginScreen() {
                   <MaterialIcons
                     name={showPassword ? "visibility" : "visibility-off"}
                     size={22}
-                    color="#666"
+                    color="#6b7280"
                   />
                 </TouchableOpacity>
               </View>
-
 
               <TouchableOpacity
                 style={[styles.loginButton, loading && styles.loginButtonDisabled]}
@@ -178,7 +163,6 @@ export default function AdminLoginScreen() {
                 </View>
               </TouchableOpacity>
 
-              {/* Divider */}
               <View style={styles.divider}>
                 <View style={styles.dividerLine} />
                 <Text style={styles.dividerText}>Secure Access</Text>
@@ -186,17 +170,16 @@ export default function AdminLoginScreen() {
               </View>
             </View>
 
-            {/* Footer */}
             <View style={styles.footer}>
               <View style={styles.securityBadge}>
-                <MaterialIcons name="security" size={18} color="#f57c00" />
+                <MaterialIcons name="security" size={18} color="#eec218" />
                 <Text style={styles.securityText}>
                   Encrypted & Secure
                 </Text>
               </View>
 
               <View style={styles.versionContainer}>
-                <MaterialIcons name="shield" size={16} color="#999" />
+                <MaterialIcons name="shield" size={16} color="#6b7280" />
                 <Text style={styles.versionText}>Version 1.0.0</Text>
               </View>
             </View>
@@ -208,217 +191,58 @@ export default function AdminLoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#faf9f7',
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
+  container: { flex: 1, backgroundColor: '#f9fafb' },
+  scrollContent: { flexGrow: 1 },
   content: {
-    flex: 1,
-    paddingHorizontal: 32,
-    paddingTop: 60,
-    paddingBottom: 40,
-    justifyContent: 'space-between',
-    position: 'relative',
+    flex: 1, paddingHorizontal: 32, paddingTop: 60, paddingBottom: 40,
+    justifyContent: 'space-between', position: 'relative'
   },
   backgroundDecoration: {
-    position: 'absolute',
-    top: -100,
-    right: -100,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(245, 124, 0, 0.05)',
+    position: 'absolute', top: -100, right: -100, width: 200, height: 200,
+    borderRadius: 100, backgroundColor: 'rgba(238, 194, 24, 0.05)',
   },
   backgroundDecorationSmall: {
-    position: 'absolute',
-    bottom: 100,
-    left: -50,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(245, 124, 0, 0.03)',
+    position: 'absolute', bottom: 100, left: -50, width: 120, height: 120,
+    borderRadius: 60, backgroundColor: 'rgba(238, 194, 24, 0.03)',
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-    zIndex: 1,
-  },
+  header: { alignItems: 'center', marginBottom: 40, zIndex: 1 },
   logoContainer: {
-    width: 100,
-    height: 100,
-    backgroundColor: '#fff',
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#f57c00',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 3,
-    borderColor: 'rgba(245, 124, 0, 0.1)',
+    width: 100, height: 100, backgroundColor: '#fff', borderRadius: 25,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 24,
+    shadowColor: '#00355f', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
+    borderWidth: 3, borderColor: 'rgba(0, 53, 95, 0.1)',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#2c2c2c',
-    marginBottom: 8,
-    letterSpacing: -1,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#f57c00',
-    fontWeight: '700',
-    marginBottom: 16,
-    letterSpacing: 0.5,
-  },
-  description: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 24,
-    fontWeight: '400',
-  },
-  form: {
-    flex: 1,
-    justifyContent: 'center',
-    maxWidth: 400,
-    alignSelf: 'center',
-    width: '100%',
-    zIndex: 1,
-  },
+  title: { fontSize: 32, fontWeight: '800', color: '#00355f', marginBottom: 8, letterSpacing: -1 },
+  subtitle: { fontSize: 18, color: '#eec218', fontWeight: '700', marginBottom: 16, letterSpacing: 0.5 },
+  description: { fontSize: 16, color: '#6b7280', textAlign: 'center', lineHeight: 24, fontWeight: '400' },
+  form: { flex: 1, justifyContent: 'center', maxWidth: 400, alignSelf: 'center', width: '100%', zIndex: 1 },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 124, 0, 0.1)',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16,
+    marginBottom: 20, paddingHorizontal: 20, paddingVertical: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 8, elevation: 4,
+    borderWidth: 1, borderColor: 'rgba(0, 53, 95, 0.1)',
   },
-  inputIcon: {
-    marginRight: 16,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-    paddingVertical: 18,
-    fontWeight: '500',
-  },
-  eyeIcon: {
-    padding: 8,
-  },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 32,
-    padding: 8,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    color: '#f57c00',
-    fontWeight: '600',
-  },
+  inputIcon: { marginRight: 16 },
+  input: { flex: 1, fontSize: 16, color: '#00355f', paddingVertical: 18, fontWeight: '500' },
+  eyeIcon: { padding: 8 },
   loginButton: {
-    backgroundColor: '#f57c00',
-    paddingVertical: 20,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    shadowColor: '#f57c00',
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-    marginBottom: 24,
+    backgroundColor: '#00355f', paddingVertical: 20, paddingHorizontal: 32, borderRadius: 16,
+    shadowColor: '#00355f', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8, marginBottom: 24,
   },
-  loginButtonDisabled: {
-    opacity: 0.7,
-    shadowOpacity: 0.2,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loginButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  loadingIcon: {
-    marginRight: 12,
-  },
-  buttonIcon: {
-    marginLeft: 12,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#e0e0e0',
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 12,
-    color: '#999',
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  footer: {
-    alignItems: 'center',
-    marginTop: 20,
-    zIndex: 1,
-  },
-  securityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 124, 0, 0.1)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginBottom: 16,
-  },
-  securityText: {
-    fontSize: 14,
-    color: '#f57c00',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  versionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    opacity: 0.7,
-  },
-  versionText: {
-    fontSize: 12,
-    color: '#999',
-    marginLeft: 6,
-    fontWeight: '500',
-  },
+  loginButtonDisabled: { opacity: 0.7, shadowOpacity: 0.2 },
+  buttonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  loginButtonText: { color: '#fff', fontSize: 18, fontWeight: '700', letterSpacing: 0.5 },
+  loadingIcon: { marginRight: 12 },
+  buttonIcon: { marginLeft: 12 },
+  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 8 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#f9fafb' },
+  dividerText: { marginHorizontal: 16, fontSize: 12, color: '#6b7280', fontWeight: '500', textTransform: 'uppercase', letterSpacing: 1 },
+  footer: { alignItems: 'center', marginTop: 20, zIndex: 1 },
+  securityBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(238, 194, 24, 0.1)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginBottom: 16 },
+  securityText: { fontSize: 14, color: '#eec218', fontWeight: '600', marginLeft: 8 },
+  versionContainer: { flexDirection: 'row', alignItems: 'center', opacity: 0.7 },
+  versionText: { fontSize: 12, color: '#6b7280', marginLeft: 6, fontWeight: '500' },
 });
