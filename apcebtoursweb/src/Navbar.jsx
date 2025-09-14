@@ -6,14 +6,18 @@ function Navbar({ user, onLogout, onLoginClick, onSignupClick }) {
   return (
     <nav className="fixed top-0 left-0 w-full z-40 bg-white shadow-md">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        {/* Logo */}
-        <div className="flex items-center space-x-2">
-          <Link to="/" className="flex items-center space-x-2">
-            <span className="text-xl font-bold" style={{ color: "#00355f" }}>
-              APCEB TOURS
-            </span>
-          </Link>
-        </div>
+       {/* Logo */}
+<div className="flex items-center space-x-2">
+  <Link to="/" className="flex items-center space-x-2">
+    <img 
+      src="/src/assets/apcebulogo.png" 
+      alt="APCEBU Tours Logo" 
+      className="h-10 w-auto object-contain"
+    />
+  </Link>
+</div>
+
+
 
         {/* Navigation Links */}
         <div className="hidden md:flex flex-grow justify-center space-x-8">
