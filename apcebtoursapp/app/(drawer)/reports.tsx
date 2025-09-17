@@ -1,314 +1,623 @@
-// reports.tsx
 import { supabase } from '@/lib/supabase';
+import { MaterialIcons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Dimensions,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
+  Platform,
+  RefreshControl,
 } from 'react-native';
+import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
 
-interface Tour {
+const { width } = Dimensions.get('window');
+
+type DashboardStats = {
+  totalBookings: number;
+  totalRevenue: number;
+  upcomingTours: number;
+  activeCustomers: number;
+  bookingsTrend: string;
+  revenueTrend: string;
+  monthlyBookings: number[];
+  monthlyRevenue: number[];
+  statusDistribution: {
+    confirmed: number;
+    pending: number;
+    cancelled: number;
+    completed: number;
+  };
+  tourTypeDistribution: {
+    regular: number;
+    combo: number;
+  };
+  topLocations: {
+    name: string;
+    count: number;
+    color: string;
+  }[];
+};
+
+type Tour = {
   id: string;
-  created_at: string;
   title: string;
   price: number;
   duration: string;
-  image: string;
   type: string;
   location: string;
-  description: string;
-  rating: number;
-  highlights: string[];
-  max_capacity: number;
   available: boolean;
-}
-
-interface MonthlyData {
-  month: string;
+  max_capacity: number;
   bookings: number;
-  revenue: number;
-  tours: number;
-}
+  rating: number;
+};
 
-interface SummaryData {
-  totalTours: number;
-  totalRevenue: number;
-  averagePrice: number;
-  mostPopularLocation: string;
-  averageRating: number;
-  availableTours: number;
-}
+type Booking = {
+  id: string;
+  customer: string;
+  date: string;
+  status: string;
+  tourType: string;
+  amount: number;
+  contact_phone?: string;
+  contact_email?: string;
+  number_of_people: number;
+  special_requests?: string;
+};
 
 export default function ReportsScreen() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [tours, setTours] = useState<Tour[]>([]);
-  const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
-  const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    fetchToursData();
+    fetchReportsData();
   }, []);
 
-  const fetchToursData = async () => {
+  const fetchReportsData = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('tours')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      setTours(data || []);
-      processData(data || []);
+      await Promise.all([fetchStats(), fetchTours(), fetchBookings()]);
     } catch (err) {
-      console.error('Error fetching tours:', err);
+      console.error('Error fetching reports data:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const processData = (toursData: Tour[]) => {
-    // Process summary data
-    const totalTours = toursData.length;
-    const totalRevenue = toursData.reduce((sum, tour) => sum + tour.price, 0);
-    const averagePrice = totalTours > 0 ? totalRevenue / totalTours : 0;
-    const availableTours = toursData.filter(tour => tour.available).length;
-    const averageRating = totalTours > 0 ? 
-      toursData.reduce((sum, tour) => sum + (tour.rating || 0), 0) / totalTours : 0;
+  const fetchStats = async () => {
+    try {
+      if (!supabase) {
+        throw new Error('Supabase client is not initialized');
+      }
 
-    // Find most popular location
-    const locationCounts: { [key: string]: number } = {};
-    toursData.forEach(tour => {
-      locationCounts[tour.location] = (locationCounts[tour.location] || 0) + 1;
-    });
-    const mostPopularLocation = Object.keys(locationCounts).reduce((a, b) => 
-      locationCounts[a] > locationCounts[b] ? a : b, 'N/A');
+      const [
+        { data: completedBookings, error: completedBookingsError },
+        { data: allBookings, error: allBookingsError },
+        { data: toursData, error: toursError },
+        { data: users, error: usersError }
+      ] = await Promise.all([
+        supabase.from('bookings').select('id,total_price,created_at,booking_date').eq('status', 'completed'),
+        supabase.from('bookings').select('status'),
+        supabase.from('tours').select('id,available,type,location'),
+        supabase.from('profiles').select('id').ilike('role', 'user')
+      ]);
 
-    setSummaryData({
-      totalTours,
-      totalRevenue,
-      averagePrice,
-      mostPopularLocation,
-      averageRating,
-      availableTours,
-    });
+      if (completedBookingsError) throw new Error(`Failed to fetch completed bookings: ${completedBookingsError.message}`);
+      if (allBookingsError) throw new Error(`Failed to fetch all bookings: ${allBookingsError.message}`);
+      if (toursError) throw new Error(`Failed to fetch tours: ${toursError.message}`);
+      if (usersError) throw new Error(`Failed to fetch profiles: ${usersError.message}`);
 
-    // Process monthly data based on created_at
-    const monthlyStats: { [key: string]: { tours: number, revenue: number } } = {};
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
+      const activeCustomers = users?.length || 0;
+      const totalBookings = completedBookings?.length || 0;
+      const totalRevenue = completedBookings?.reduce((sum, b) => sum + (b.total_price || 0), 0) || 0;
+      const upcomingTours = toursData?.filter(t => t.available).length || 0;
 
-    // Initialize all months
-    months.forEach(month => {
-      monthlyStats[month] = { tours: 0, revenue: 0 };
-    });
+      const monthlyBookings = Array(6).fill(0);
+      const monthlyRevenue = Array(6).fill(0);
+      const now = new Date();
+      
+      completedBookings?.forEach(b => {
+        const diff = (now.getFullYear() - new Date(b.created_at).getFullYear()) * 12 + (now.getMonth() - new Date(b.created_at).getMonth());
+        if (diff >= 0 && diff < 6) {
+          monthlyBookings[5 - diff]++;
+          monthlyRevenue[5 - diff] += b.total_price || 0;
+        }
+      });
 
-    // Process tours by month
-    toursData.forEach(tour => {
-      const date = new Date(tour.created_at);
-      const monthName = months[date.getMonth()];
-      monthlyStats[monthName].tours += 1;
-      monthlyStats[monthName].revenue += tour.price;
-    });
+      const statusDistribution = {
+        confirmed: allBookings?.filter(b => b.status === 'confirmed').length || 0,
+        pending: allBookings?.filter(b => b.status === 'pending').length || 0,
+        cancelled: allBookings?.filter(b => b.status === 'cancelled').length || 0,
+        completed: allBookings?.filter(b => b.status === 'completed').length || 0
+      };
 
-    const processedMonthlyData = months.map(month => ({
-      month,
-      bookings: monthlyStats[month].tours, // Using tours as bookings for chart compatibility
-      revenue: monthlyStats[month].revenue,
-      tours: monthlyStats[month].tours,
-    }));
+      const tourTypeDistribution = {
+        regular: toursData?.filter(t => t.type === 'regular').length || 0,
+        combo: toursData?.filter(t => t.type === 'combo').length || 0
+      };
 
-    setMonthlyData(processedMonthlyData);
+      const locationCounts: { [key: string]: number } = {};
+      toursData?.forEach(t => { locationCounts[t.location] = (locationCounts[t.location] || 0) + 1; });
+      const topLocations = Object.entries(locationCounts)
+        .sort(([, a], [, b]) => b - a).slice(0, 5)
+        .map(([name, count], i) => ({ name, count, color: ['#6366f1', '#06d6a0', '#f72585', '#ffbe0b', '#fb8500'][i] }));
+
+      const currentMonthBookings = completedBookings?.filter(b => new Date(b.created_at).getMonth() === now.getMonth() && new Date(b.created_at).getFullYear() === now.getFullYear()) || [];
+      const prevMonthBookings = completedBookings?.filter(b => {
+        const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+        const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+        return new Date(b.created_at).getMonth() === prevMonth && new Date(b.created_at).getFullYear() === prevYear;
+      }) || [];
+
+      setStats({
+        totalBookings,
+        totalRevenue,
+        upcomingTours,
+        activeCustomers,
+        bookingsTrend: calculateTrend(currentMonthBookings.length, prevMonthBookings.length),
+        revenueTrend: calculateTrend(currentMonthBookings.reduce((sum, b) => sum + (b.total_price || 0), 0), prevMonthBookings.reduce((sum, b) => sum + (b.total_price || 0), 0)),
+        monthlyBookings,
+        monthlyRevenue,
+        statusDistribution,
+        tourTypeDistribution,
+        topLocations
+      });
+    } catch (error: any) {
+  console.error(error.message);
+  }
+
   };
 
-  const formatCurrency = (amount: number): string => {
-    return `₱${amount.toLocaleString()}`;
-  };
+  const calculateTrend = (current: number, previous: number) => 
+    previous === 0 ? (current > 0 ? '+100%' : '0%') : `${((current - previous) / previous * 100).toFixed(0)}%`;
 
-  const SummaryCard = ({ title, value, icon }: { title: string; value: string; icon: string }) => (
-    <View style={styles.summaryCard}>
-      <Text style={styles.summaryIcon}>{icon}</Text>
-      <Text style={styles.summaryTitle}>{title}</Text>
-      <Text style={styles.summaryValue}>{value}</Text>
-    </View>
-  );
+  const fetchTours = async () => {
+    const { data, error } = await supabase
+      .from('tours')
+      .select('id,title,price,duration,type,location,available,max_capacity,rating,bookings(id)')
+      .order('created_at', { ascending: false });
 
-  const BarChart = () => {
-    const maxBookings = Math.max(...monthlyData.map(data => data.tours), 1);
-    
-    return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Monthly Tours Created</Text>
-        <View style={styles.chart}>
-          {monthlyData.map((data, index) => {
-            const barHeight = (data.tours / maxBookings) * 120; // Max height of 120
-            return (
-              <View key={index} style={styles.barContainer}>
-                <View style={styles.barWrapper}>
-                  <View style={[styles.bar, { height: barHeight }]} />
-                  <Text style={styles.barValue}>{data.tours}</Text>
-                </View>
-                <Text style={styles.barLabel}>{data.month.slice(0, 3)}</Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
+    if (error) throw error;
+
+    setTours(
+      data?.map((t) => ({
+        id: t.id,
+        title: t.title,
+        price: t.price || 0,
+        duration: t.duration,
+        type: t.type,
+        location: t.location,
+        available: t.available,
+        max_capacity: t.max_capacity || 0,
+        bookings: t.bookings?.length || 0,
+        rating: t.rating || 0,
+      })) || []
     );
   };
 
-  const MonthlyDataTable = () => (
-    <View style={styles.tableContainer}>
-      <Text style={styles.tableTitle}>Monthly Breakdown</Text>
-      
-      {/* Table Header */}
-      <View style={styles.tableHeader}>
-        <Text style={[styles.tableHeaderText, styles.monthColumn]}>Month</Text>
-        <Text style={[styles.tableHeaderText, styles.bookingsColumn]}>Tours</Text>
-        <Text style={[styles.tableHeaderText, styles.revenueColumn]}>Total Value</Text>
-      </View>
+  const fetchBookings = async () => {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(
+        `
+        id,
+        total_price,
+        booking_date,
+        status,
+        number_of_people,
+        contact_phone,
+        contact_email,
+        special_requests,
+        profiles(full_name,email),
+        tours!bookings_tour_id_fkey(title,type)
+      `
+      )
+      .order('created_at', { ascending: false });
 
-      {/* Table Rows */}
-      {monthlyData.map((data, index) => (
-        <View key={index} style={[styles.tableRow, index % 2 === 0 && styles.tableRowEven]}>
-          <Text style={[styles.tableCellText, styles.monthColumn]}>{data.month}</Text>
-          <Text style={[styles.tableCellText, styles.bookingsColumn]}>{data.tours}</Text>
-          <Text style={[styles.tableCellText, styles.revenueColumn]}>
-            {formatCurrency(data.revenue)}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
+    if (error) throw error;
 
-  if (loading) {
+    setBookings(
+      data?.map((b) => ({
+        id: b.id,
+        customer: b.profiles?.full_name || b.profiles?.email || 'Unknown',
+        date: b.booking_date,
+        status: b.status,
+        tourType: b.tours?.title || 'Unknown Tour',
+        amount: b.total_price || 0,
+        contact_phone: b.contact_phone,
+        contact_email: b.contact_email,
+        number_of_people: b.number_of_people,
+        special_requests: b.special_requests,
+      })) || []
+    );
+  };
+
+  const exportToExcel = async () => {
+    try {
+      setExporting(true);
+      const data: string[][] = [
+        ['Tour Management Report', '', '', '', '', '', '', ''],
+        ['Generated on:', new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }), '', '', '', '', '', ''],
+        ['', '', '', '', '', '', '', ''],
+        ['Summary Statistics', '', '', '', '', '', '', ''],
+        ['Metric', 'Value', 'Trend', '', '', '', '', ''],
+        ['Total Bookings', stats?.totalBookings.toString() || '0', stats?.bookingsTrend || '0%', '', '', '', '', ''],
+        ['Total Revenue', `PHP ${stats?.totalRevenue.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}` || 'PHP 0', stats?.revenueTrend || '0%', '', '', '', '', ''],
+        ['Available Tours', stats?.upcomingTours.toString() || '0', '', '', '', '', '', ''],
+        ['Active Customers', stats?.activeCustomers.toString() || '0', '', '', '', '', '', ''],
+      ];
+
+      const monthNames = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      stats?.monthlyBookings.forEach((bookings, index) => {
+        data.push([
+          monthNames[index] || `Month ${index + 1}`,
+          bookings.toString(),
+          stats?.monthlyRevenue[index].toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) || 'PHP 0',
+          '', '', '', '', '',
+        ]);
+      });
+
+      let csvContent = data
+        .map((row) => row.map((cell) => {
+          if (typeof cell === 'string') {
+            return `"${cell.replace(/"/g, '""')}"`; 
+          }
+          return `"${cell}"`;
+        }).join(','))
+        .join('\n');
+
+      const filename = `tour_report_${new Date().toISOString().split('T')[0]}.csv`;
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        Alert.alert('Success', `Report downloaded as ${filename}`);
+      } else {
+        const fileUri = `${FileSystem.documentDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'text/csv',
+            dialogTitle: 'Export Tour Report',
+          });
+        } else {
+          Alert.alert('Success', `Report saved as ${filename}`);
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to export report');
+      console.error('Export error:', error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchReportsData();
+  };
+
+  if (loading && !refreshing) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2E7D32" />
-          <Text style={styles.loadingText}>Loading reports...</Text>
+      <View style={styles.loadingContainer}>
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color="#6366f1" />
+          <Text style={styles.loadingText}>Generating Analytics...</Text>
+          <Text style={styles.loadingSubText}>Please wait while we process your data</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Error: {error}</Text>
-          <Text style={styles.errorSubtext}>Please try again later</Text>
+      <View style={styles.errorContainer}>
+        <View style={styles.errorCard}>
+          <View style={styles.errorIcon}>
+            <MaterialIcons name="analytics" size={48} color="#f72585" />
+          </View>
+          <Text style={styles.errorTitle}>Analytics Unavailable</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={fetchReportsData}>
+            <MaterialIcons name="refresh" size={20} color="#fff" />
+            <Text style={styles.retryText}>Retry Analysis</Text>
+          </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
-  if (!summaryData) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>No data available</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // Chart configurations with modern styling
+  const chartConfig = {
+    backgroundGradientFrom: '#ffffff',
+    backgroundGradientTo: '#ffffff',
+    color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(51, 65, 85, ${opacity})`,
+    strokeWidth: 3,
+    barPercentage: 0.7,
+    decimalPlaces: 0,
+    propsForBackgroundLines: {
+      strokeDasharray: '',
+      stroke: '#e2e8f0',
+      strokeWidth: 1,
+    },
+    propsForLabels: {
+      fontSize: 11,
+      fontWeight: '600',
+    },
+  };
+
+  const pieData = [
+    { name: 'Confirmed', population: stats?.statusDistribution.confirmed || 0, color: '#06d6a0', legendFontColor: '#334155', legendFontSize: 13 },
+    { name: 'Pending', population: stats?.statusDistribution.pending || 0, color: '#ffbe0b', legendFontColor: '#334155', legendFontSize: 13 },
+    { name: 'Cancelled', population: stats?.statusDistribution.cancelled || 0, color: '#f72585', legendFontColor: '#334155', legendFontSize: 13 },
+    { name: 'Completed', population: stats?.statusDistribution.completed || 0, color: '#6366f1', legendFontColor: '#334155', legendFontSize: 13 },
+  ].filter((item) => item.population > 0);
+
+  const revenueData = {
+    labels: ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].slice(-(stats?.monthlyRevenue.length || 0)),
+    datasets: [{
+      data: stats?.monthlyRevenue || [],
+      color: (opacity = 1) => `rgba(6, 214, 160, ${opacity})`,
+      strokeWidth: 3,
+    }],
+  };
+
+  const bookingsBarData = {
+    labels: ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].slice(-(stats?.monthlyBookings.length || 0)),
+    datasets: [{
+      data: stats?.monthlyBookings || [],
+    }],
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#6366f1']} />}
+      >
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Reports</Text>
-          <Text style={styles.description}>
-            View tours, pricing, and performance analytics from your database.
-          </Text>
+          <View>
+            <Text style={styles.headerTitle}>Business Analytics</Text>
+            <Text style={styles.headerSubtitle}>Real-time insights & performance metrics</Text>
+          </View>
         </View>
 
-        {/* Summary Cards */}
-        <View style={styles.summaryContainer}>
-          <SummaryCard
-            title="Total Tours"
-            value={summaryData.totalTours.toLocaleString()}
-            icon="🏝️"
-          />
-          <SummaryCard
-            title="Available Tours"
-            value={summaryData.availableTours.toLocaleString()}
-            icon="✅"
-          />
-        </View>
-
-        <View style={styles.summaryContainer}>
-          <SummaryCard
-            title="Average Price"
-            value={formatCurrency(summaryData.averagePrice)}
-            icon="💰"
-          />
-          <SummaryCard
-            title="Avg Rating"
-            value={summaryData.averageRating.toFixed(1)}
-            icon="⭐"
-          />
-        </View>
-
-        <View style={styles.summaryContainer}>
-          <SummaryCard
-            title="Popular Location"
-            value={summaryData.mostPopularLocation}
-            icon="📍"
-          />
-          <SummaryCard
-            title="Total Value"
-            value={formatCurrency(summaryData.totalRevenue)}
-            icon="💎"
-          />
-        </View>
-
-        {/* Bar Chart */}
-        <BarChart />
-
-        {/* Monthly Data Table */}
-        <MonthlyDataTable />
-
-        {/* Tours Summary */}
-        <View style={styles.tableContainer}>
-          <Text style={styles.tableTitle}>Tours by Type & Location</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Regular Tours</Text>
-              <Text style={styles.statValue}>
-                {tours.filter(t => t.type === 'regular').length}
-              </Text>
+        {/* KPI Cards */}
+        <View style={styles.kpiSection}>
+          <View style={styles.kpiRow}>
+            <View style={[styles.kpiCard, styles.primaryKpi]}>
+              <View style={styles.kpiIconContainer}>
+                <MaterialIcons name="trending-up" size={28} color="#06d6a0" />
+              </View>
+              <View style={styles.kpiContent}>
+                <Text style={styles.kpiValue}>₱{(stats?.totalRevenue || 0).toLocaleString()}</Text>
+                <Text style={styles.kpiLabel}>Total Revenue</Text>
+                <View style={styles.trendContainer}>
+                  <MaterialIcons 
+                    name={stats?.revenueTrend?.startsWith('+') ? 'arrow-upward' : 'arrow-downward'} 
+                    size={14} 
+                    color={stats?.revenueTrend?.startsWith('+') ? '#06d6a0' : '#f72585'} 
+                  />
+                  <Text style={[styles.trendText, { 
+                    color: stats?.revenueTrend?.startsWith('+') ? '#06d6a0' : '#f72585' 
+                  }]}>
+                    {stats?.revenueTrend}
+                  </Text>
+                </View>
+              </View>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Combo Tours</Text>
-              <Text style={styles.statValue}>
-                {tours.filter(t => t.type === 'combo').length}
-              </Text>
+
+            <View style={[styles.kpiCard, styles.secondaryKpi]}>
+              <View style={styles.kpiIconContainer}>
+                <MaterialIcons name="event-available" size={28} color="#6366f1" />
+              </View>
+              <View style={styles.kpiContent}>
+                <Text style={styles.kpiValue}>{stats?.totalBookings || 0}</Text>
+                <Text style={styles.kpiLabel}>Total Bookings</Text>
+                <View style={styles.trendContainer}>
+                  <MaterialIcons 
+                    name={stats?.bookingsTrend?.startsWith('+') ? 'arrow-upward' : 'arrow-downward'} 
+                    size={14} 
+                    color={stats?.bookingsTrend?.startsWith('+') ? '#06d6a0' : '#f72585'} 
+                  />
+                  <Text style={[styles.trendText, { 
+                    color: stats?.bookingsTrend?.startsWith('+') ? '#06d6a0' : '#f72585' 
+                  }]}>
+                    {stats?.bookingsTrend}
+                  </Text>
+                </View>
+              </View>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Unique Locations</Text>
-              <Text style={styles.statValue}>
-                {new Set(tours.map(t => t.location)).size}
-              </Text>
+          </View>
+
+          <View style={styles.kpiRow}>
+            <View style={styles.kpiCard}>
+              <View style={styles.kpiIconContainer}>
+                <MaterialIcons name="tour" size={24} color="#ffbe0b" />
+              </View>
+              <View style={styles.kpiContent}>
+                <Text style={styles.kpiValue}>{stats?.upcomingTours || 0}</Text>
+                <Text style={styles.kpiLabel}>Active Tours</Text>
+              </View>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Total Capacity</Text>
-              <Text style={styles.statValue}>
-                {tours.reduce((sum, t) => sum + (t.max_capacity || 0), 0)}
-              </Text>
+
+            <View style={styles.kpiCard}>
+              <View style={styles.kpiIconContainer}>
+                <MaterialIcons name="people" size={24} color="#fb8500" />
+              </View>
+              <View style={styles.kpiContent}>
+                <Text style={styles.kpiValue}>{stats?.activeCustomers || 0}</Text>
+                <Text style={styles.kpiLabel}>Customers</Text>
+              </View>
             </View>
           </View>
         </View>
 
-        {/* Bottom padding */}
+        {/* Revenue Trend */}
+        <View style={styles.chartSection}>
+          <View style={styles.chartHeader}>
+            <Text style={styles.chartTitle}>Revenue Performance</Text>
+            <Text style={styles.chartSubtitle}>Monthly revenue tracking</Text>
+          </View>
+          <View style={styles.chartContainer}>
+            <LineChart
+              data={revenueData}
+              width={width - 60}
+              height={240}
+              chartConfig={{
+                ...chartConfig,
+                color: (opacity = 1) => `rgba(6, 214, 160, ${opacity})`,
+              }}
+              bezier
+              style={styles.chart}
+            />
+          </View>
+        </View>
+
+        {/* Bookings Bar Chart */}
+        <View style={styles.chartSection}>
+          <View style={styles.chartHeader}>
+            <Text style={styles.chartTitle}>Booking Trends</Text>
+            <Text style={styles.chartSubtitle}>Monthly booking volume</Text>
+          </View>
+          <View style={styles.chartContainer}>
+            <BarChart
+              data={bookingsBarData}
+              width={width - 60}
+              height={240}
+              chartConfig={chartConfig}
+              style={styles.chart}
+              showValuesOnTopOfBars
+            />
+          </View>
+        </View>
+
+        {/* Booking Status Distribution */}
+        <View style={styles.chartSection}>
+          <View style={styles.chartHeader}>
+            <Text style={styles.chartTitle}>Booking Status</Text>
+            <Text style={styles.chartSubtitle}>Current distribution overview</Text>
+          </View>
+          <View style={styles.chartContainer}>
+            {pieData.length > 0 ? (
+              <PieChart
+                data={pieData}
+                width={width - 60}
+                height={240}
+                chartConfig={chartConfig}
+                accessor="population"
+                backgroundColor="transparent"
+                paddingLeft="15"
+                style={styles.chart}
+                hasLegend={true}
+              />
+            ) : (
+              <View style={styles.noDataContainer}>
+                <MaterialIcons name="donut-small" size={48} color="#cbd5e1" />
+                <Text style={styles.noDataText}>No booking data available</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Location Performance */}
+        <View style={styles.tableSection}>
+          <View style={styles.tableHeader}>
+            <Text style={styles.tableTitle}>Top Performing Locations</Text>
+            <Text style={styles.tableSubtitle}>Tours by destination</Text>
+          </View>
+          <View style={styles.tableContainer}>
+            {stats?.topLocations.map((location, index) => (
+              <View key={index} style={styles.locationRow}>
+                <View style={styles.locationRank}>
+                  <Text style={styles.rankText}>#{index + 1}</Text>
+                </View>
+                <View style={[styles.locationIndicator, { backgroundColor: location.color }]} />
+                <View style={styles.locationInfo}>
+                  <Text style={styles.locationName}>{location.name}</Text>
+                  <Text style={styles.locationSubtext}>{location.count} tours available</Text>
+                </View>
+                <View style={styles.locationMetric}>
+                  <Text style={styles.locationCount}>{location.count}</Text>
+                  <Text style={styles.locationLabel}>tours</Text>
+                </View>
+              </View>
+            )) || (
+              <View style={styles.noDataContainer}>
+                <MaterialIcons name="location-off" size={48} color="#cbd5e1" />
+                <Text style={styles.noDataText}>No location data available</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Tour Analytics */}
+        <View style={styles.statsSection}>
+          <View style={styles.statsHeader}>
+            <Text style={styles.statsTitle}>Tour Portfolio</Text>
+            <Text style={styles.statsSubtitle}>Comprehensive tour statistics</Text>
+          </View>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <MaterialIcons name="map" size={32} color="#6366f1" />
+              <Text style={styles.statValue}>{tours.filter(t => t.type === 'regular').length}</Text>
+              <Text style={styles.statLabel}>Regular Tours</Text>
+            </View>
+            <View style={styles.statCard}>
+              <MaterialIcons name="layers" size={32} color="#06d6a0" />
+              <Text style={styles.statValue}>{tours.filter(t => t.type === 'combo').length}</Text>
+              <Text style={styles.statLabel}>Combo Packages</Text>
+            </View>
+            <View style={styles.statCard}>
+              <MaterialIcons name="place" size={32} color="#f72585" />
+              <Text style={styles.statValue}>{new Set(tours.map(t => t.location)).size}</Text>
+              <Text style={styles.statLabel}>Unique Locations</Text>
+            </View>
+            <View style={styles.statCard}>
+              <MaterialIcons name="groups" size={32} color="#ffbe0b" />
+              <Text style={styles.statValue}>{tours.reduce((sum, t) => sum + t.max_capacity, 0)}</Text>
+              <Text style={styles.statLabel}>Total Capacity</Text>
+            </View>
+          </View>
+        </View>
+        {/* Export Button */}
+        <View style={styles.exportSection}>
+          <TouchableOpacity style={styles.exportButton} onPress={exportToExcel} disabled={exporting}>
+            <MaterialIcons 
+              name={exporting ? "hourglass-empty" : "file-download"} 
+              size={24} 
+              color="#fff" 
+            />
+            <Text style={styles.exportText}>{exporting ? 'Exporting Report...' : 'Export Complete Report'}</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
@@ -318,237 +627,339 @@ export default function ReportsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#faf9f7',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  header: {
-    padding: 20,
-    paddingBottom: 10,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
-  },
-  description: {
-    fontSize: 16,
-    color: '#666',
-    lineHeight: 22,
-    marginBottom: 20,
+    backgroundColor: '#f8fafc',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 40,
+    alignItems: 'center',
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
   },
   loadingText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#334155',
     marginTop: 16,
-    fontSize: 16,
-    color: '#666',
+  },
+  loadingSubText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 8,
+    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f8fafc',
     padding: 20,
+  },
+  errorCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#f72585',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  errorIcon: {
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 8,
   },
   errorText: {
-    fontSize: 18,
-    color: '#d32f2f',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  errorSubtext: {
     fontSize: 14,
-    color: '#666',
+    color: '#64748b',
     textAlign: 'center',
+    marginBottom: 24,
   },
-
-  // Summary Cards
-  summaryContainer: {
+  retryButton: {
     flexDirection: 'row',
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  retryText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    paddingTop: 60,
+    backgroundColor: '#ffffff',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 4,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    backgroundColor: '#6366f1',
     paddingHorizontal: 20,
-    gap: 12,
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  exportText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  kpiSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  kpiRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    gap: 16,
+  },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#64748b',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  primaryKpi: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#06d6a0',
+  },
+  secondaryKpi: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366f1',
+  },
+  kpiIconContainer: {
     marginBottom: 12,
   },
-  summaryCard: {
+  kpiContent: {
     flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  summaryIcon: {
+  kpiValue: {
     fontSize: 24,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  kpiLabel: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
     marginBottom: 8,
   },
-  summaryTitle: {
+  trendContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trendText: {
     fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 4,
-    fontWeight: '500',
+    fontWeight: '600',
+    marginLeft: 4,
   },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
+  chartSection: {
+    marginHorizontal: 20,
+    marginBottom: 24,
   },
-
-  // Bar Chart
-  chartContainer: {
-    backgroundColor: '#ffffff',
-    margin: 20,
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+  chartHeader: {
+    marginBottom: 16,
   },
   chartTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 20,
-    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  chartSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 4,
+  },
+  chartContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#64748b',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6,
   },
   chart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 180,
-    paddingBottom: 30,
+    borderRadius: 16,
   },
-  barContainer: {
+  noDataContainer: {
     alignItems: 'center',
-    flex: 1,
+    paddingVertical: 40,
   },
-  barWrapper: {
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    height: 140,
-  },
-  bar: {
-    backgroundColor: '#2E7D32',
-    width: 20,
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  barValue: {
-    fontSize: 10,
-    color: '#333',
+  noDataText: {
+    fontSize: 16,
+    color: '#94a3b8',
+    marginTop: 12,
     fontWeight: '500',
   },
-  barLabel: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 8,
-    transform: [{ rotate: '-45deg' }],
-  },
-
-  // Table
-  tableContainer: {
-    backgroundColor: '#ffffff',
-    margin: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    overflow: 'hidden',
-  },
-  tableTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    padding: 20,
-    paddingBottom: 16,
+  tableSection: {
+    marginHorizontal: 20,
+    marginBottom: 24,
   },
   tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#f5f5f5',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    marginBottom: 16,
   },
-  tableHeaderText: {
+  tableTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  tableSubtitle: {
     fontSize: 14,
+    color: '#64748b',
+    marginTop: 4,
+  },
+  tableContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#64748b',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  locationRank: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  rankText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  locationIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 16,
+  },
+  locationInfo: {
+    flex: 1,
+  },
+  locationName: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#1e293b',
   },
-  tableRow: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+  locationSubtext: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 2,
   },
-  tableRowEven: {
-    backgroundColor: '#f9f9f9',
+  locationMetric: {
+    alignItems: 'center',
   },
-  tableCellText: {
+  locationCount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#6366f1',
+  },
+  locationLabel: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  statsSection: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+  },
+  statsHeader: {
+    marginBottom: 16,
+  },
+  statsTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  statsSubtitle: {
     fontSize: 14,
-    color: '#333',
+    color: '#64748b',
+    marginTop: 4,
   },
-  monthColumn: {
-    flex: 2,
-  },
-  bookingsColumn: {
-    flex: 1.5,
-    textAlign: 'center',
-  },
-  revenueColumn: {
-    flex: 2,
-    textAlign: 'right',
-  },
-
-  // Stats Grid
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: 20,
-    paddingTop: 0,
+    gap: 16,
   },
-  statItem: {
-    width: '50%',
-    padding: 10,
+  statCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
     alignItems: 'center',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 4,
+    shadowColor: '#64748b',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2E7D32',
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginTop: 12,
+    marginBottom: 4,
   },
-
+  statLabel: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   bottomSpacer: {
-    height: 20,
+    height: 40,
   },
 });

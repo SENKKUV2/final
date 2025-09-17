@@ -1,41 +1,71 @@
-// Fallback for using MaterialIcons on Android and web.
+// IconSymbol.tsx
 
+import { Platform } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
+import { SymbolView, SymbolViewProps, SymbolWeight } from 'expo-symbols';
 import { ComponentProps } from 'react';
-import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
+import { OpaqueColorValue, StyleProp, TextStyle, ViewStyle } from 'react-native';
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
-type IconSymbolName = keyof typeof MAPPING;
+//
+// ✅ 1. Define only the SF Symbols you support
+//
+type SupportedSymbols =
+  | 'house.fill'
+  | 'paperplane.fill'
+  | 'chevron.left.forwardslash.chevron.right'
+  | 'chevron.right'
+  | 'bell.fill';
 
-/**
- * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
- */
-const MAPPING = {
+//
+// ✅ 2. Map SF Symbols → Material Icons (for web & Android)
+//
+const MAPPING: Record<
+  SupportedSymbols,
+  ComponentProps<typeof MaterialIcons>['name']
+> = {
   'house.fill': 'home',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
-} as IconMapping;
+  'bell.fill': 'notifications',
+};
 
-/**
- * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
- * This ensures a consistent look across platforms, and optimal resource usage.
- * Icon `name`s are based on SF Symbols and require manual mapping to Material Icons.
- */
+//
+// ✅ 3. Cross-platform Icon component
+//
 export function IconSymbol({
   name,
   size = 24,
   color,
   style,
+  weight = 'regular',
 }: {
-  name: IconSymbolName;
+  name: SupportedSymbols;
   size?: number;
   color: string | OpaqueColorValue;
-  style?: StyleProp<TextStyle>;
+  style?: StyleProp<TextStyle | ViewStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  if (Platform.OS === 'ios') {
+    // 🍎 On iOS → use SF Symbols
+    return (
+      <SymbolView
+        weight={weight}
+        tintColor={color as string}
+        resizeMode="scaleAspectFit"
+        name={name}
+        style={[{ width: size, height: size }, style]}
+      />
+    );
+  }
+
+  // 🤖 On Android & Web → fallback to MaterialIcons
+  return (
+    <MaterialIcons
+      color={color as string}
+      size={size}
+      name={MAPPING[name]}
+      style={style as StyleProp<TextStyle>}
+    />
+  );
 }

@@ -7,13 +7,13 @@ import Chatbot from "./AI/Chatbot";
 import { FaRobot } from "react-icons/fa";
 
 function Profile() {
-  const { user, setUser } = useAuth(); // Use global user state from AuthContext
+  const { user, setUser } = useAuth();
   const [profile, setProfile] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loadingUser, setLoadingUser] = useState(true);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingBookings, setLoadingBookings] = useState(true);
-  const [isChatbotOpen, setIsChatbotOpen] = useState(false); // Chatbot state
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [activeTab, setActiveTab] = useState('status');
   const [profileData, setProfileData] = useState({
@@ -25,14 +25,14 @@ function Profile() {
     avatar_url: ''
   });
   const [updatingProfile, setUpdatingProfile] = useState(false);
-  const [cancellingBooking, setCancellingBooking] = useState(null);
+  const [requestingCancel, setRequestingCancel] = useState(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelBookingId, setCancelBookingId] = useState(null);
+  const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
+  const [cancelRequestBookingId, setCancelRequestBookingId] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -143,7 +143,7 @@ function Profile() {
       setShowSuccessModal(true);
       navigate("/");
     } catch (err) {
-      setErrorMessage("Error logging out");
+      setErrorMessage("Error logging out: " + err.message);
       setShowErrorModal(true);
     }
   };
@@ -178,29 +178,58 @@ function Profile() {
     }
   };
 
-  const handleCancelBookingClick = (bookingId) => {
-    setCancelBookingId(bookingId);
-    setShowCancelModal(true);
+  const handleCancelRequestClick = (bookingId) => {
+    setCancelRequestBookingId(bookingId);
+    setShowCancelRequestModal(true);
   };
 
-  const handleCancelBooking = async (bookingId) => {
+  const handleCancelRequest = async (bookingId) => {
     try {
-      setCancellingBooking(bookingId);
+      setRequestingCancel(bookingId);
+      console.log("Attempting to cancel booking ID:", bookingId);
+
+      // Verify booking exists and user is authorized
+      const { data: booking, error: fetchError } = await supabase
+        .from("bookings")
+        .select("id, user_id, status")
+        .eq("id", bookingId)
+        .single();
+
+      if (fetchError || !booking) {
+        console.error("Booking fetch error:", fetchError);
+        throw new Error("Booking not found or inaccessible");
+      }
+
+      if (booking.user_id !== user.id) {
+        throw new Error("You are not authorized to cancel this booking");
+      }
+
+      if (!['pending', 'confirmed'].includes(booking.status)) {
+        throw new Error(`Cannot request cancellation for booking with status: ${booking.status}`);
+      }
+
       const { error } = await supabase
         .from("bookings")
-        .update({ status: 'cancelled' })
+        .update({
+          status: 'cancel-requested'
+        })
         .eq("id", bookingId);
 
-      if (error) throw error;
-      setSuccessMessage("Booking cancelled successfully");
+      if (error) {
+        console.error("Supabase update error:", error);
+        throw new Error(`Failed to update booking: ${error.message}`);
+      }
+
+      setSuccessMessage("Cancellation request submitted successfully");
       setShowSuccessModal(true);
-      setShowCancelModal(false);
+      setShowCancelRequestModal(false);
       fetchBookings();
     } catch (err) {
-      setErrorMessage("Error cancelling booking: " + err.message);
+      setErrorMessage(`Error submitting cancellation request: ${err.message}`);
       setShowErrorModal(true);
+      console.error("Cancellation error:", err);
     } finally {
-      setCancellingBooking(null);
+      setRequestingCancel(null);
     }
   };
 
@@ -217,7 +246,9 @@ function Profile() {
           total_price,
           status,
           special_requests,
-          tours ( title, duration, image, price )
+          contact_email,
+          tours ( title, duration, image, price ),
+          profiles ( full_name )
         `)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
@@ -235,22 +266,25 @@ function Profile() {
   const getFilteredBookings = () => {
     const now = new Date();
     const today = now.toISOString().split('T')[0];
-    
+
     switch (activeTab) {
       case 'status':
-        // Show pending and confirmed bookings (current/future)
-        return bookings.filter(booking => 
-          (booking.status === 'pending' || booking.status === 'confirmed') && 
-          booking.booking_date >= today
+        return bookings.filter(
+          (booking) =>
+            (booking.status === 'pending' || booking.status === 'confirmed') &&
+            booking.booking_date >= today
         );
       case 'history':
-        // Show completed bookings (past confirmed bookings)
-        return bookings.filter(booking => 
-          booking.status === 'confirmed' && booking.booking_date < today
+        return bookings.filter(
+          (booking) =>
+            booking.status === 'completed' || // CHANGED: Include 'completed' status
+            (booking.status === 'confirmed' && booking.booking_date < today)
         );
-      case 'cancel-request':
-        // Show cancelled bookings
-        return bookings.filter(booking => booking.status === 'cancelled');
+      case 'cancellations':
+        return bookings.filter(
+          (booking) =>
+            booking.status === 'cancel-requested' || booking.status === 'cancelled'
+        );
       default:
         return bookings;
     }
@@ -260,7 +294,8 @@ function Profile() {
     switch (status) {
       case 'confirmed': return 'text-green-600 bg-green-100 border-green-200';
       case 'pending': return 'text-yellow-600 bg-yellow-100 border-yellow-200';
-      case 'cancelled': return 'text-red-600 bg-red-100 border-red-200';
+      case 'cancel-requested': return 'text-orange-600 bg-orange-100 border-orange-200';
+      case 'cancelled': return 'text-red-600 bg-red-100 border-red-200'; // CHANGED: Ensure 'cancelled' has red styling
       case 'completed': return 'text-blue-600 bg-blue-100 border-blue-200';
       default: return 'text-gray-600 bg-gray-100 border-gray-200';
     }
@@ -278,6 +313,12 @@ function Profile() {
         return (
           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+          </svg>
+        );
+      case 'cancel-requested':
+        return (
+          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M9 12l2 2 4-4m-6 8a9 9 0 100-18 9 9 0 000 18z" clipRule="evenodd" />
           </svg>
         );
       case 'cancelled':
@@ -308,16 +349,17 @@ function Profile() {
   const getBookingStats = () => {
     const now = new Date();
     const today = now.toISOString().split('T')[0];
-    
+
     return {
-      status: bookings.filter(b => 
-        (b.status === 'pending' || b.status === 'confirmed') && 
-        b.booking_date >= today
+      status: bookings.filter(
+        (b) => (b.status === 'pending' || b.status === 'confirmed') && b.booking_date >= today
       ).length,
-      history: bookings.filter(b => 
-        b.status === 'confirmed' && b.booking_date < today
+      history: bookings.filter(
+        (b) => b.status === 'completed' || (b.status === 'confirmed' && b.booking_date < today)
+      ).length, // CHANGED: Include 'completed' status
+      cancellations: bookings.filter(
+        (b) => b.status === 'cancel-requested' || b.status === 'cancelled'
       ).length,
-      cancelled: bookings.filter(b => b.status === 'cancelled').length
     };
   };
 
@@ -460,15 +502,15 @@ function Profile() {
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-red-100 rounded-md flex items-center justify-center">
+                  <div className="w-8 h-8 bg-red-100 rounded-md flex items-center justify-center"> {/* CHANGED: Red for cancellations (approved or requested) */}
                     <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                     </svg>
                   </div>
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Cancelled</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.cancelled}</p>
+                  <p className="text-sm font-medium text-gray-500">Cancellations</p> {/* CHANGED: Renamed to "Cancellations" */}
+                  <p className="text-2xl font-semibold text-gray-900">{stats.cancellations}</p>
                 </div>
               </div>
             </div>
@@ -612,14 +654,14 @@ function Profile() {
                 History ({stats.history})
               </button>
               <button
-                onClick={() => setActiveTab('cancel-request')}
+                onClick={() => setActiveTab('cancellations')}
                 className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'cancel-request'
+                  activeTab === 'cancellations'
                     ? 'border-b-2 border-blue-600 text-blue-600'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Cancel Request ({stats.cancelled})
+                Cancellations ({stats.cancellations}) {/* CHANGED: Renamed to "Cancellations" */}
               </button>
             </div>
 
@@ -636,7 +678,7 @@ function Profile() {
                 <p className="text-gray-600">
                   {activeTab === 'status' && 'No current bookings found.'}
                   {activeTab === 'history' && 'No completed bookings found.'}
-                  {activeTab === 'cancel-request' && 'No cancelled bookings found.'}
+                  {activeTab === 'cancellations' && 'No cancellations or cancel requests found.'} {/* CHANGED: Updated message */}
                 </p>
               </div>
             ) : (
@@ -656,7 +698,7 @@ function Profile() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {getFilteredBookings().map((booking) => {
                       const isPastDate = new Date(booking.booking_date) < new Date();
-                      const canCancel = (booking.status === 'confirmed' || booking.status === 'pending') && !isPastDate;
+                      const canRequestCancel = (booking.status === 'confirmed' || booking.status === 'pending') && !isPastDate;
                       
                       return (
                         <tr key={booking.id} className="hover:bg-gray-50">
@@ -681,21 +723,16 @@ function Profile() {
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm text-gray-900">
-                              <div className="mb-1">
-                                <span className="font-medium">Date:</span> 
-                                <span className={isPastDate && booking.status === 'confirmed' ? 'text-blue-600 font-medium' : ''}>
-                                  {formatDate(booking.booking_date)}
-                                </span>
-                              </div>
-                              <div className="mb-1"><span className="font-medium">People:</span> {booking.number_of_people}</div>
-                              <div className="mb-1"><span className="font-medium">Booked:</span> {formatDate(booking.created_at)}</div>
+                              <div className="mb-1"><span className="font-medium">Full Name:</span> {booking.profiles?.full_name || 'Not provided'}</div>
+                              <div className="mb-1"><span className="font-medium">Gmail:</span> {booking.contact_email || 'Not provided'}</div>
+                              <div className="mb-1"><span className="font-medium">Booked Tour:</span> {booking.tours?.title || 'Not provided'}</div>
+                              <div className="mb-1"><span className="font-medium">Date:</span> {formatDate(booking.booking_date)}</div>
+                              <div className="mb-1"><span className="font-medium">Booked Date:</span> {formatDate(booking.created_at)}</div>
                               {booking.special_requests && (
                                 <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
                                   <span className="font-medium">Notes:</span> {booking.special_requests}
                                 </div>
                               )}
-                              
-                              {/* Booking Details after confirmation - Show detailed info for confirmed bookings */}
                               {booking.status === 'confirmed' && (
                                 <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
                                   <div className="text-xs font-semibold text-green-800 mb-2">BOOKING CONFIRMED</div>
@@ -715,7 +752,7 @@ function Profile() {
                           <td className="px-6 py-4">
                             <span className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full border ${getStatusColor(booking.status)}`}>
                               {getStatusIcon(booking.status)}
-                              {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                              {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('-', ' ')}
                             </span>
                             {booking.status === 'pending' && (
                               <div className="mt-1 text-xs text-yellow-600">
@@ -732,9 +769,14 @@ function Profile() {
                                 Ready for tour
                               </div>
                             )}
-                            {booking.status === 'cancelled' && (
+                            {booking.status === 'cancel-requested' && (
+                              <div className="mt-1 text-xs text-orange-600">
+                                Cancellation requested on {formatDate(booking.created_at)} {/* CHANGED: Fallback to created_at */}
+                              </div>
+                            )}
+                            {booking.status === 'cancelled' && ( // CHANGED: Handle approved cancellations
                               <div className="mt-1 text-xs text-red-600">
-                                Booking cancelled on {formatDate(booking.updated_at || booking.created_at)}
+                                Cancelled on {formatDate(booking.created_at)} {/* CHANGED: Fallback to created_at */}
                               </div>
                             )}
                           </td>
@@ -744,21 +786,21 @@ function Profile() {
                           {activeTab === 'status' && (
                             <td className="px-6 py-4">
                               <div className="flex flex-col gap-2">
-                                {canCancel && (
+                                {canRequestCancel && (
                                   <button
-                                    onClick={() => handleCancelBookingClick(booking.id)}
-                                    disabled={cancellingBooking === booking.id}
-                                    className="text-red-600 hover:text-red-800 text-sm font-medium disabled:opacity-50 transition duration-200"
+                                    onClick={() => handleCancelRequestClick(booking.id)}
+                                    disabled={requestingCancel === booking.id}
+                                    className="text-orange-600 hover:text-orange-800 text-sm font-medium disabled:opacity-50 transition duration-200"
                                   >
-                                    {cancellingBooking === booking.id ? (
+                                    {requestingCancel === booking.id ? (
                                       <span className="flex items-center">
                                         <svg className="animate-spin -ml-1 mr-2 h-3 w-3" fill="none" viewBox="0 0 24 24">
                                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
-                                        Cancelling...
+                                        Requesting...
                                       </span>
-                                    ) : 'Cancel Booking'}
+                                    ) : 'Request Cancellation'}
                                   </button>
                                 )}
                                 {booking.status === 'pending' && (
@@ -766,8 +808,14 @@ function Profile() {
                                     Contact support for changes
                                   </div>
                                 )}
-                                {!canCancel && isPastDate && booking.status === 'confirmed' && (
+                                {!canRequestCancel && isPastDate && booking.status === 'confirmed' && (
                                   <span className="text-xs text-gray-500">Tour completed</span>
+                                )}
+                                {booking.status === 'cancel-requested' && (
+                                  <span className="text-xs text-orange-500">Awaiting approval</span>
+                                )}
+                                {booking.status === 'cancelled' && ( // CHANGED: Show final state
+                                  <span className="text-xs text-red-500">Cancellation approved</span>
                                 )}
                               </div>
                             </td>
@@ -783,7 +831,7 @@ function Profile() {
             {/* Booking Status Legend */}
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="text-sm font-medium text-gray-800 mb-3">Booking Status Guide</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3"> {/* CHANGED: Adjusted to 4 columns for new status */}
                 <div className="flex items-center">
                   <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-yellow-600 bg-yellow-100 border-yellow-200 mr-2">
                     {getStatusIcon('pending')}
@@ -799,11 +847,18 @@ function Profile() {
                   <span className="text-xs text-gray-600">Booking confirmed & ready</span>
                 </div>
                 <div className="flex items-center">
+                  <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-orange-600 bg-orange-100 border-orange-200 mr-2">
+                    {getStatusIcon('cancel-requested')}
+                    Cancel Requested
+                  </span>
+                  <span className="text-xs text-gray-600">Awaiting cancellation approval</span>
+                </div>
+                <div className="flex items-center">
                   <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-red-600 bg-red-100 border-red-200 mr-2">
                     {getStatusIcon('cancelled')}
                     Cancelled
                   </span>
-                  <span className="text-xs text-gray-600">Booking cancelled</span>
+                  <span className="text-xs text-gray-600">Cancellation approved</span> {/* CHANGED: Added cancelled status */}
                 </div>
               </div>
             </div>
@@ -832,12 +887,12 @@ function Profile() {
         message={errorMessage}
       />
 
-      {/* Cancel Booking Confirmation Modal */}
-      <ConfirmCancelModal
-        showCancelModal={showCancelModal}
-        setShowCancelModal={setShowCancelModal}
-        handleCancelBooking={handleCancelBooking}
-        cancelBookingId={cancelBookingId}
+      {/* Cancel Request Confirmation Modal */}
+      <ConfirmCancelRequestModal
+        showCancelRequestModal={showCancelRequestModal}
+        setShowCancelRequestModal={setShowCancelRequestModal}
+        handleCancelRequest={handleCancelRequest}
+        cancelRequestBookingId={cancelRequestBookingId}
       />
     </>
   );
@@ -957,19 +1012,19 @@ const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
   );
 };
 
-// Cancel Booking Confirmation Modal Component
-const ConfirmCancelModal = ({ showCancelModal, setShowCancelModal, handleCancelBooking, cancelBookingId }) => {
-  if (!showCancelModal) return null;
+// Cancel Request Confirmation Modal Component
+const ConfirmCancelRequestModal = ({ showCancelRequestModal, setShowCancelRequestModal, handleCancelRequest, cancelRequestBookingId }) => {
+  if (!showCancelRequestModal) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
       <div className="bg-white rounded-xl max-w-sm w-full p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
-            Confirm Cancellation
+            Confirm Cancellation Request
           </h2>
           <button
-            onClick={() => setShowCancelModal(false)}
+            onClick={() => setShowCancelRequestModal(false)}
             className="text-gray-500 hover:text-gray-700 text-xl"
             aria-label="Close"
           >
@@ -977,21 +1032,21 @@ const ConfirmCancelModal = ({ showCancelModal, setShowCancelModal, handleCancelB
           </button>
         </div>
         <p className="text-gray-600 mb-6">
-          Are you sure you want to cancel this booking?
+          Are you sure you want to request cancellation of this booking?
         </p>
         <div className="flex justify-end space-x-4">
           <button
-            onClick={() => setShowCancelModal(false)}
+            onClick={() => setShowCancelRequestModal(false)}
             className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium rounded-lg"
           >
             Cancel
           </button>
           <button
-            onClick={() => handleCancelBooking(cancelBookingId)}
+            onClick={() => handleCancelRequest(cancelRequestBookingId)}
             className="px-4 py-2 rounded-lg font-medium transition-colors"
             style={{ backgroundColor: '#00355f', color: 'white' }}
           >
-            Confirm
+            Submit Request
           </button>
         </div>
       </div>

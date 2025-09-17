@@ -1,1407 +1,652 @@
 import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { LineChart, PieChart, ProgressChart } from 'react-native-chart-kit';
 
-
+const { width } = Dimensions.get('window');
+const chartConfig = {
+  backgroundGradientFrom: '#fff',
+  backgroundGradientTo: '#fff',
+  decimalPlaces: 0,
+  color: () => '#000',
+  labelColor: () => '#666',
+  style: { borderRadius: 12 },
+  propsForDots: { r: '3', strokeWidth: '1', stroke: '#fff' },
+  propsForBackgroundLines: { strokeWidth: 1, stroke: '#e0e0e0', strokeDasharray: '3, 3' },
+  propsForLabels: { fontSize: 8, fontWeight: '500' }
+};
 
 type Booking = {
-    id: string;
-    customer: string;
-    date: string;
-    status: string;
-    tourType: string;
-    amount: string;
-    contact_phone?: string;
-    contact_email?: string;
-    number_of_people: number;
-    special_requests?: string;
+  id: string;
+  customer: string;
+  date: string;
+  status: string;
+  tourType: string;
+  amount: string;
+  contact_phone?: string;
+  contact_email?: string;
+  number_of_people: number;
+  special_requests?: string;
+  notificationType: 'New Booking' | 'Cancel Request';
 };
-
-type Tour = {
-    id: string;
-    title: string;
-    price: string;
-    duration: string;
-    image: string;
-    bookings: number;
-    rating: number;
-    type: string;
-    location: string;
-    available: boolean;
-    max_capacity: number;
-};
-
-type DashboardStats = {
-    totalBookings: number;
-    totalRevenue: number;
-    upcomingTours: number;
-    activeCustomers: number;
-    bookingsTrend: string;
-    revenueTrend: string;
-    toursTrend: string;
-    customersTrend: string;
-};
+type Tour = { id: string; title: string; price: string; duration: string; image: string; bookings: number; rating: number; type: string; location: string; available: boolean; max_capacity: number; features?: { text: string; available: boolean }[] };
+type DashboardStats = { totalBookings: number; totalRevenue: number; upcomingTours: number; activeCustomers: number; bookingsTrend: string; revenueTrend: string; monthlyBookings: number[]; monthlyRevenue: number[]; statusDistribution: { confirmed: number; pending: number; cancelled: number; completed: number }; tourTypeDistribution: { regular: number; combo: number }; topLocations: { name: string; count: number; color: string }[] };
 
 export default function AdminDashboard() {
-    const router = useRouter();
+  const router = useRouter();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
+  const [tours, setTours] = useState<Tour[]>([]);
+  const [comboPackages, setComboPackages] = useState<Tour[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState({ details: false, notifications: false });
+  const [currentTour, setCurrentTour] = useState<Tour | null>(null);
 
-    const [stats, setStats] = useState<DashboardStats | null>(null);
-    const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
-    const [tours, setTours] = useState<Tour[]>([]);
-    const [comboPackages, setComboPackages] = useState<Tour[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [isEditModalVisible, setEditModalVisible] = useState(false);
-    const [isViewModalVisible, setViewModalVisible] = useState(false);
-    const [currentTour, setCurrentTour] = useState<Tour | null>(null);
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
-    const [uploading, setUploading] = useState(false);
+  useEffect(() => { fetchDashboardData(); }, []);
 
-    useEffect(() => {
-        fetchDashboardData();
-    }, []);
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setRefreshing(true);
+      await Promise.all([fetchStats(), fetchPendingBookings(), fetchTours('regular', setTours), fetchTours('combo', setComboPackages)]);
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+      setError('Failed to fetch data');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-    const fetchDashboardData = async () => {
-        try {
-            setLoading(true);
-            await Promise.all([
-                fetchStats(),
-                fetchPendingBookings(),
-                fetchTours(),
-                fetchComboPackages()
-            ]);
-        } catch (err) {
-            console.error('Error fetching dashboard data:', err);
-            setError(err instanceof Error ? err.message : 'Failed to fetch data');
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    };
-
-    const fetchStats = async () => {
-        const { data: bookingsData, error: bookingsError } = await supabase
-            .from('bookings')
-            .select(`
-                id,
-                total_price,
-                created_at,
-                status,
-                user_id,
-                booking_date
-            `);
-
-        if (bookingsError) throw bookingsError;
-
-        const { data: toursData, error: toursError } = await supabase
-            .from('tours')
-            .select('id, available, created_at');
-
-        if (toursError) throw toursError;
-
-        const { data: usersData, error: usersError } = await supabase
-            .from('profiles')
-            .select('id, created_at');
-
-        if (usersError) throw usersError;
-
-        const totalBookings = bookingsData?.length || 0;
-        const totalRevenue = bookingsData?.reduce((sum, booking) => sum + (booking.total_price || 0), 0) || 0;
-        const upcomingTours = toursData?.filter(tour => tour.available)?.length || 0;
-        const activeCustomers = usersData?.length || 0;
-
-        const currentMonth = new Date().getMonth();
-        const currentYear = new Date().getFullYear();
-
-        const currentMonthBookings = bookingsData?.filter(booking => {
-            const bookingDate = new Date(booking.created_at);
-            return bookingDate.getMonth() === currentMonth && bookingDate.getFullYear() === currentYear;
-        }) || [];
-
-        const previousMonthBookings = bookingsData?.filter(booking => {
-            const bookingDate = new Date(booking.created_at);
-            const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-            const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-            return bookingDate.getMonth() === prevMonth && bookingDate.getFullYear() === prevYear;
-        }) || [];
-
-        const bookingsTrend = calculateTrend(currentMonthBookings.length, previousMonthBookings.length);
-        const currentRevenue = currentMonthBookings.reduce((sum, booking) => sum + (booking.total_price || 0), 0);
-        const previousRevenue = previousMonthBookings.reduce((sum, booking) => sum + (booking.total_price || 0), 0);
-        const revenueTrend = calculateTrend(currentRevenue, previousRevenue);
-
-        setStats({
-            totalBookings,
-            totalRevenue,
-            upcomingTours,
-            activeCustomers,
-            bookingsTrend,
-            revenueTrend,
-            toursTrend: '+3',
-            customersTrend: '+15%',
-        });
-    };
-
-    const calculateTrend = (current: number, previous: number): string => {
-        if (previous === 0) return current > 0 ? '+100%' : '0%';
-        const percentage = ((current - previous) / previous * 100).toFixed(0);
-        return `${percentage >= 0 ? '+' : ''}${percentage}%`;
-    };
-
-    const fetchPendingBookings = async () => {
-        const { data, error } = await supabase
-            .from('bookings')
-            .select(`
-                id,
-                total_price,
-                booking_date,
-                status,
-                number_of_people,
-                contact_phone,
-                contact_email,
-                special_requests,
-                profiles(full_name, email),
-                tours!bookings_tour_id_fkey(title, type)
-            `)
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(5);
-
-        if (error) throw error;
-
-        const formattedBookings: Booking[] = (data || []).map(booking => ({
-            id: booking.id,
-            customer: booking?.profiles?.full_name || booking?.profiles?.email || 'Unknown Customer',
-            date: booking.booking_date,
-            status: booking.status,
-            tourType: booking.tours?.title || 'Unknown Tour',
-            amount: `₱${booking.total_price?.toLocaleString()}`,
-            contact_phone: booking.contact_phone,
-            contact_email: booking.contact_email,
-            number_of_people: booking.number_of_people,
-            special_requests: booking.special_requests,
-        }));
-
-        setPendingBookings(formattedBookings);
-    };
-
-    const fetchTours = async () => {
-        const { data, error } = await supabase
-            .from('tours')
-            .select(`
-                id,
-                title,
-                price,
-                duration,
-                image,
-                rating,
-                type,
-                location,
-                available,
-                max_capacity,
-                bookings(id)
-            `)
-            .eq('type', 'regular')
-            .eq('available', true)
-            .order('created_at', { ascending: false })
-            .limit(3);
-
-        if (error) throw error;
-
-        const formattedTours: Tour[] = (data || []).map(tour => ({
-            id: tour.id,
-            title: tour.title,
-            price: `₱${tour.price?.toLocaleString()}`,
-            duration: tour.duration,
-            image: tour.image,
-            rating: tour.rating || 4.5,
-            type: tour.type,
-            location: tour.location,
-            available: tour.available,
-            max_capacity: tour.max_capacity || 20,
-            bookings: tour.bookings?.length || 0,
-        }));
-
-        setTours(formattedTours);
-    };
-
-    const fetchComboPackages = async () => {
-        const { data, error } = await supabase
-            .from('tours')
-            .select(`
-                id,
-                title,
-                price,
-                duration,
-                image,
-                rating,
-                type,
-                location,
-                available,
-                max_capacity,
-                bookings(id)
-            `)
-            .eq('type', 'combo')
-            .eq('available', true)
-            .order('created_at', { ascending: false })
-            .limit(3);
-
-        if (error) throw error;
-
-        const formattedComboPackages: Tour[] = (data || []).map(tour => ({
-            id: tour.id,
-            title: tour.title,
-            price: `₱${tour.price?.toLocaleString()}`,
-            duration: tour.duration,
-            image: tour.image,
-            rating: tour.rating || 4.5,
-            type: tour.type,
-            location: tour.location,
-            available: tour.available,
-            max_capacity: tour.max_capacity || 20,
-            bookings: tour.bookings?.length || 0,
-        }));
-
-        setComboPackages(formattedComboPackages);
-    };
-
-    const handleBookingAction = async (bookingId: string, action: 'confirmed' | 'cancelled') => {
-        try {
-            const { error } = await supabase
-                .from('bookings')
-                .update({ status: action })
-                .eq('id', bookingId);
-
-            if (error) throw error;
-
-            await fetchPendingBookings();
-            await fetchStats();
-        } catch (err) {
-            console.error(`Error ${action} booking:`, err);
-        }
-    };
-
-    const onRefresh = () => {
-        setRefreshing(true);
-        fetchDashboardData();
-    };
-
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        });
-    };
-
-    const getStatusColor = (status: string) => {
-        switch (status.toLowerCase()) {
-            case 'pending': return '#FF9800';
-            case 'confirmed': return '#4CAF50';
-            case 'cancelled': return '#f44336';
-            case 'completed': return '#2196F3';
-            default: return '#666';
-        }
-    };
-
-    const handleEditPress = (tour: Tour) => {
-        setCurrentTour(tour);
-        setSelectedImage(null);
-        setEditModalVisible(true);
-    };
-    
-    const handleViewPress = (tour: Tour) => {
-        setCurrentTour(tour);
-        setViewModalVisible(true);
-    };
-
-    const handlePickImage = async () => {
-        if (Platform.OS !== 'web') {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission required', 'Permission to access the media library is needed to upload images.');
-                return;
-            }
-        }
-    
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [4, 3],
-            quality: 1,
-        });
-    
-        if (!result.canceled) {
-            setSelectedImage(result.assets[0].uri);
-        }
-    };
-    
-    const uploadImage = async (uri: string) => {
-        try {
-            setUploading(true);
-    
-            const fileName = `${uuidv4()}.jpg`;
-    
-            const response = await fetch(uri);
-            const blob = await response.blob();
-    
-            const { data, error } = await supabase
-                .storage
-                .from('tours')
-                .upload(fileName, blob, {
-                    cacheControl: '3600',
-                    upsert: false
-                });
-    
-            if (error) {
-                throw error;
-            }
-    
-            const { data: publicUrlData } = supabase
-                .storage
-                .from('tours')
-                .getPublicUrl(fileName);
-    
-            return publicUrlData.publicUrl;
-        } catch (err) {
-            console.error('Error uploading image:', err);
-            Alert.alert('Upload Error', 'Failed to upload image. Please try again.');
-            return null;
-        } finally {
-            setUploading(false);
-        }
-    };
-    
-    const handleSave = async () => {
-        if (!currentTour) return;
-
-        if (!currentTour.title || !currentTour.price || !currentTour.duration) {
-            Alert.alert('Error', 'Please fill in all required fields.');
-            return;
-        }
-        
-        setUploading(true);
-    
-        try {
-            let newImageUrl = currentTour.image;
-    
-            if (selectedImage) {
-                newImageUrl = await uploadImage(selectedImage);
-                if (!newImageUrl) {
-                    return;
-                }
-            }
-    
-            const priceForDb = parseFloat(currentTour.price.replace('₱', '').replace(/,/g, ''));
-            const { data, error } = await supabase
-                .from('tours')
-                .update({ 
-                    title: currentTour.title,
-                    price: priceForDb,
-                    duration: currentTour.duration,
-                    image: newImageUrl,
-                    rating: currentTour.rating,
-                    location: currentTour.location,
-                    max_capacity: currentTour.max_capacity,
-                    type: currentTour.type
-                })
-                .eq('id', currentTour.id)
-                .select();
-    
-            if (error) {
-                throw error;
-            }
-    
-            console.log('Tour updated successfully:', data);
-            setEditModalVisible(false);
-            setSelectedImage(null);
-            await fetchTours();
-            await fetchComboPackages();
-            Alert.alert('Success', 'Tour updated successfully!');
-        } catch (err) {
-            console.error('Error updating tour:', err);
-            Alert.alert('Error', 'Failed to update tour. Please try again.');
-        } finally {
-            setUploading(false);
-        }
-    };
-
-    const EditTourModal = () => {
-        if (!currentTour) return null;
-
-        return (
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={isEditModalVisible}
-                onRequestClose={() => setEditModalVisible(false)}
-            >
-                <View style={modalStyles.centeredView}>
-                    <View style={modalStyles.modalView}>
-                        <Text style={modalStyles.modalTitle}>Edit Tour</Text>
-                        
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            <Text style={modalStyles.label}>Tour Image</Text>
-                            <View style={modalStyles.imagePickerContainer}>
-                                <Image 
-                                    source={{ uri: selectedImage || currentTour.image }} 
-                                    style={modalStyles.tourImage} 
-                                />
-                                <TouchableOpacity 
-                                    style={modalStyles.changeImageButton} 
-                                    onPress={handlePickImage}
-                                >
-                                    <Text style={modalStyles.changeImageText}>Change Image</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            <Text style={modalStyles.label}>Tour Title</Text>
-                            <TextInput
-                                style={modalStyles.input}
-                                value={currentTour.title}
-                                onChangeText={(text) => setCurrentTour({ ...currentTour, title: text })}
-                            />
-
-                            <Text style={modalStyles.label}>Price</Text>
-                            <TextInput
-                                style={modalStyles.input}
-                                value={currentTour.price}
-                                onChangeText={(text) => setCurrentTour({ ...currentTour, price: text })}
-                                keyboardType="numeric"
-                            />
-
-                            <Text style={modalStyles.label}>Duration</Text>
-                            <TextInput
-                                style={modalStyles.input}
-                                value={currentTour.duration}
-                                onChangeText={(text) => setCurrentTour({ ...currentTour, duration: text })}
-                            />
-
-                            <Text style={modalStyles.label}>Location</Text>
-                            <TextInput
-                                style={modalStyles.input}
-                                value={currentTour.location}
-                                onChangeText={(text) => setCurrentTour({ ...currentTour, location: text })}
-                            />
-                        </ScrollView>
-                        
-                        <View style={modalStyles.buttonContainer}>
-                            <TouchableOpacity
-                                style={[modalStyles.button, modalStyles.cancelButton]}
-                                onPress={() => {
-                                    setEditModalVisible(false);
-                                    setSelectedImage(null);
-                                }}
-                            >
-                                <Text style={modalStyles.textStyle}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[modalStyles.button, modalStyles.saveButton]}
-                                onPress={handleSave}
-                                disabled={uploading}
-                            >
-                                {uploading ? (
-                                    <ActivityIndicator color="#fff" />
-                                ) : (
-                                    <Text style={modalStyles.textStyle}>Save</Text>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-        );
-    };
-
-    const ViewTourModal = () => {
-        if (!currentTour) return null;
-
-        return (
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={isViewModalVisible}
-                onRequestClose={() => setViewModalVisible(false)}
-            >
-                <View style={modalStyles.centeredView}>
-                    <View style={modalStyles.modalView}>
-                        <Text style={modalStyles.modalTitle}>Tour Details</Text>
-                        
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            <View style={modalStyles.imageContainer}>
-                                <Image 
-                                    source={{ uri: currentTour.image }} 
-                                    style={modalStyles.tourImage} 
-                                />
-                            </View>
-
-                            <Text style={modalStyles.label}>Tour Title</Text>
-                            <TextInput
-                                style={modalStyles.staticInput}
-                                value={currentTour.title}
-                                editable={false}
-                            />
-
-                            <Text style={modalStyles.label}>Price</Text>
-                            <TextInput
-                                style={modalStyles.staticInput}
-                                value={currentTour.price}
-                                editable={false}
-                            />
-
-                            <Text style={modalStyles.label}>Duration</Text>
-                            <TextInput
-                                style={modalStyles.staticInput}
-                                value={currentTour.duration}
-                                editable={false}
-                            />
-
-                            <Text style={modalStyles.label}>Location</Text>
-                            <TextInput
-                                style={modalStyles.staticInput}
-                                value={currentTour.location}
-                                editable={false}
-                            />
-                            
-                            <Text style={modalStyles.label}>Bookings</Text>
-                            <TextInput
-                                style={modalStyles.staticInput}
-                                value={currentTour.bookings.toString()}
-                                editable={false}
-                            />
-                            
-                            <Text style={modalStyles.label}>Rating</Text>
-                            <TextInput
-                                style={modalStyles.staticInput}
-                                value={currentTour.rating.toString()}
-                                editable={false}
-                            />
-
-                            <Text style={modalStyles.label}>Max Capacity</Text>
-                            <TextInput
-                                style={modalStyles.staticInput}
-                                value={currentTour.max_capacity.toString()}
-                                editable={false}
-                            />
-                        </ScrollView>
-                        
-                        <View style={modalStyles.buttonContainer}>
-                            <TouchableOpacity
-                                style={[modalStyles.button, modalStyles.closeButton]}
-                                onPress={() => setViewModalVisible(false)}
-                            >
-                                <Text style={modalStyles.textStyle}>Close</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-        );
-    };
-
-    if (loading && !refreshing) {
-        return (
-            <View style={[styles.container, styles.loadingContainer]}>
-                <ActivityIndicator size="large" color="#f57c00" />
-                <Text style={styles.loadingText}>Loading dashboard...</Text>
-            </View>
-        );
+  const fetchStats = async () => {
+  try {
+    if (!supabase) {
+      throw new Error('Supabase client is not initialized');
     }
 
-    if (error) {
-        return (
-            <View style={[styles.container, styles.errorContainer]}>
-                <Text style={styles.errorText}>Error: {error}</Text>
-                <TouchableOpacity style={styles.retryButton} onPress={fetchDashboardData}>
-                    <Text style={styles.retryText}>Try Again</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
+    const [
+      { data: completedBookings, error: completedBookingsError },
+      { data: allBookings, error: allBookingsError },
+      { data: toursData, error: toursError },
+      { data: users, error: usersError }
+    ] = await Promise.all([
+      supabase.from('bookings').select('id,total_price,created_at,booking_date').eq('status', 'completed'),
+      supabase.from('bookings').select('status'),
+      supabase.from('tours').select('id,available,type,location'),
+      supabase.from('profiles').select('id').ilike('role', 'user')
+    ]);
 
-    const statsCards = [
-        {
-            label: "Total Bookings",
-            value: stats?.totalBookings?.toString() || "0",
-            icon: "book-online",
-            color: "#4CAF50",
-            trend: stats?.bookingsTrend || "0%",
-            subtitle: "This month"
-        },
-        {
-            label: "Total Revenue",
-            value: `₱${stats?.totalRevenue?.toLocaleString() || '0'}`,
-            icon: "attach-money",
-            color: "#f57c00",
-            trend: stats?.revenueTrend || "0%",
-            subtitle: "This month"
-        },
-        {
-            label: "Available Tours",
-            value: stats?.upcomingTours?.toString() || "0",
-            icon: "tour",
-            color: "#2196F3",
-            trend: stats?.toursTrend || "0%",
-            subtitle: "Active"
-        },
-        {
-            label: "Registered Users",
-            value: stats?.activeCustomers?.toString() || "0",
-            icon: "people",
-            color: "#9C27B0",
-            trend: stats?.customersTrend || "0%",
-            subtitle: "Total"
-        },
+    if (completedBookingsError) throw new Error(`Failed to fetch completed bookings: ${completedBookingsError.message}`);
+    if (allBookingsError) throw new Error(`Failed to fetch all bookings: ${allBookingsError.message}`);
+    if (toursError) throw new Error(`Failed to fetch tours: ${toursError.message}`);
+    if (usersError) throw new Error(`Failed to fetch profiles: ${usersError.message}`);
+
+    console.log('Raw users data:', users);
+    const activeCustomers = users?.length || 0;
+    console.log('activeCustomers:', activeCustomers);
+
+      const totalBookings = completedBookings?.length || 0;
+      const totalRevenue = completedBookings?.reduce((sum, b) => sum + (b.total_price || 0), 0) || 0;
+      const upcomingTours = toursData?.filter(t => t.available).length || 0;
+
+      const monthlyBookings = Array(6).fill(0), monthlyRevenue = Array(6).fill(0);
+      const now = new Date();
+      completedBookings?.forEach(b => {
+        const diff = (now.getFullYear() - new Date(b.created_at).getFullYear()) * 12 + (now.getMonth() - new Date(b.created_at).getMonth());
+        if (diff >= 0 && diff < 6) {
+          monthlyBookings[5 - diff]++;
+          monthlyRevenue[5 - diff] += b.total_price || 0;
+        }
+      });
+
+      const statusDistribution = {
+        confirmed: allBookings?.filter(b => b.status === 'confirmed').length || 0,
+        pending: allBookings?.filter(b => b.status === 'pending').length || 0,
+        cancelled: allBookings?.filter(b => b.status === 'cancelled').length || 0,
+        completed: allBookings?.filter(b => b.status === 'completed').length || 0
+      };
+
+      const tourTypeDistribution = {
+        regular: toursData?.filter(t => t.type === 'regular').length || 0,
+        combo: toursData?.filter(t => t.type === 'combo').length || 0
+      };
+
+      const locationCounts: { [key: string]: number } = {};
+      toursData?.forEach(t => { locationCounts[t.location] = (locationCounts[t.location] || 0) + 1; });
+      const topLocations = Object.entries(locationCounts)
+        .sort(([, a], [, b]) => b - a).slice(0, 5)
+        .map(([name, count], i) => ({ name, count, color: ['#f57c00', '#4CAF50', '#2196F3', '#9C27B0', '#FF5722'][i] }));
+
+      const currentMonthBookings = completedBookings?.filter(b => new Date(b.created_at).getMonth() === now.getMonth() && new Date(b.created_at).getFullYear() === now.getFullYear()) || [];
+      const prevMonthBookings = completedBookings?.filter(b => {
+        const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+        const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+        return new Date(b.created_at).getMonth() === prevMonth && new Date(b.created_at).getFullYear() === prevYear;
+      }) || [];
+
+      setStats({
+        totalBookings,
+        totalRevenue,
+        upcomingTours,
+        activeCustomers,
+        bookingsTrend: calculateTrend(currentMonthBookings.length, prevMonthBookings.length),
+        revenueTrend: calculateTrend(currentMonthBookings.reduce((sum, b) => sum + (b.total_price || 0), 0), prevMonthBookings.reduce((sum, b) => sum + (b.total_price || 0), 0)),
+        monthlyBookings,
+        monthlyRevenue,
+        statusDistribution,
+        tourTypeDistribution,
+        topLocations
+      });
+    } catch (error: any) { // Explicitly type error
+    console.error('Error in fetchStats:', error);
+    setError(error.message || 'Failed to fetch stats');
+    }
+  };
+
+  const calculateTrend = (current: number, previous: number) => previous === 0 ? (current > 0 ? '+100%' : '0%') : `${((current - previous) / previous * 100).toFixed(0)}%`;
+
+  const fetchPendingBookings = async () => {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id,total_price,booking_date,status,number_of_people,contact_phone,contact_email,special_requests,profiles(email),tours!bookings_tour_id_fkey(title,type)')
+      .in('status', ['pending', 'cancel-requested'])
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (error) throw error;
+    setPendingBookings(data?.map(b => ({
+      id: b.id,
+      customer: b.profiles?.email || 'Unknown',
+      date: b.booking_date,
+      status: b.status,
+      tourType: b.tours?.title || 'Unknown Tour',
+      amount: `₱${b.total_price?.toLocaleString()}`,
+      contact_phone: b.contact_phone,
+      contact_email: b.contact_email,
+      number_of_people: b.number_of_people,
+      special_requests: b.special_requests,
+      notificationType: b.status === 'pending' ? 'New Booking' : 'Cancel Request'
+    })) || []);
+  };
+
+  const fetchTours = async (type: string, setter: React.Dispatch<React.SetStateAction<Tour[]>>) => {
+    const { data, error } = await supabase
+      .from('tours')
+      .select('id,title,price,duration,image,rating,type,location,available,max_capacity,bookings(id),features')
+      .eq('type', type)
+      .eq('available', true)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    if (error) throw error;
+    setter(data?.map(t => ({
+      id: t.id,
+      title: t.title,
+      price: `₱${t.price?.toLocaleString()}`,
+      duration: t.duration,
+      image: t.image,
+      rating: t.rating || 4.5,
+      type: t.type,
+      location: t.location,
+      available: t.available,
+      max_capacity: t.max_capacity || 20,
+      bookings: t.bookings?.length || 0,
+      features: t.features || []
+    })) || []);
+  };
+
+  const NotificationModal = () => {
+    return (
+      <Modal
+        animationType="slide"
+        transparent
+        visible={modalVisible.notifications}
+        onRequestClose={() => setModalVisible({ ...modalVisible, notifications: false })}
+      >
+        <View style={ms.centered}>
+          <View style={ms.modal}>
+            <View style={ms.header}>
+              <Text style={ms.title}>Notifications</Text>
+              <TouchableOpacity
+                style={ms.close}
+                onPress={() => setModalVisible({ ...modalVisible, notifications: false })}
+              >
+                <MaterialIcons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={ms.section}>
+                <Text style={ms.sectionTitle}>Pending Actions</Text>
+                {pendingBookings.length > 0 ? (
+                  pendingBookings.map(b => (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={ms.notificationCard}
+                      onPress={() => {
+                        setModalVisible({ ...modalVisible, notifications: false });
+                        router.push(`/bookings?bookingId=${b.id}`);
+                      }}
+                    >
+                      <View style={ms.notificationHeader}>
+                        <Text style={ms.notificationId}>#{b.id.slice(0, 8)}</Text>
+                        <View style={[ms.statusBadge, { backgroundColor: b.status === 'pending' ? '#FF980015' : '#FF572215' }]}>
+                          <Text style={[ms.statusText, { color: b.status === 'pending' ? '#FF9800' : '#FF5722' }]}>
+                            {b.notificationType}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={ms.notificationCustomer}>{b.customer}</Text>
+                      <Text style={ms.notificationTour}>{b.tourType}</Text>
+                      <View style={ms.notificationInfo}>
+                        <MaterialIcons name="calendar-today" size={14} color="#666" />
+                        <Text style={ms.notificationDate}>
+                          {new Date(b.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                        <MaterialIcons name="attach-money" size={14} color="#666" style={{ marginLeft: 10 }} />
+                        <Text style={ms.notificationAmount}>{b.amount}</Text>
+                        <MaterialIcons name="people" size={14} color="#666" style={{ marginLeft: 10 }} />
+                        <Text style={ms.notificationAmount}>{b.number_of_people}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={ms.noDataCard}>
+                    <MaterialIcons name="event-available" size={48} color="#ccc" />
+                    <Text style={ms.noData}>No pending actions</Text>
+                    <Text style={ms.noDataSub}>All bookings up to date!</Text>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
+  const TourDetailsModal = () => {
+    if (!currentTour) return null;
+
+    const featureIcons: { [key: string]: string } = {
+      'Professional Photography': 'camera-alt',
+      'Local Cuisine': 'restaurant',
+      'Island Hopping': 'directions-boat',
+      'Swimming Activities': 'pool',
+      'Transportation': 'local-taxi',
+      'Accommodation': 'hotel',
+      'Safety Equipment': 'security',
+      'Tour Guide': 'headset-mic'
+    };
+
+    const tourDetails = [
+      { label: 'Tour Type', value: currentTour.type.toUpperCase(), icon: 'category' },
+      { label: 'Duration', value: currentTour.duration, icon: 'schedule' },
+      { label: 'Location', value: currentTour.location, icon: 'location-on' },
+      { label: 'Max Capacity', value: `${currentTour.max_capacity} people`, icon: 'people' },
+      { label: 'Total Bookings', value: `${currentTour.bookings} bookings`, icon: 'book-online' },
+      { label: 'Rating', value: `${currentTour.rating}/5.0`, icon: 'star' },
+      { label: 'Price', value: currentTour.price, icon: 'attach-money' },
+      { label: 'Status', value: currentTour.available ? 'Available' : 'Unavailable', icon: 'check-circle' }
     ];
 
     return (
-        <View style={styles.container}>
-            <ScrollView 
-                showsVerticalScrollIndicator={false} 
-                contentContainerStyle={{ paddingBottom: 40 }}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                }
-            >
-                {/* Header */}
-                <View style={styles.header}>
-                    <View>
-                        <Text style={styles.headerTitle}>Admin Dashboard</Text>
-                        <Text style={styles.headerSubtitle}>Manage your tour business efficiently</Text>
-                    </View>
-                    <TouchableOpacity style={styles.notificationButton}>
-                        <MaterialIcons name="notifications-outline" size={24} color="#f57c00" />
-                        <View style={styles.notificationBadge}>
-                            <Text style={styles.badgeText}>{pendingBookings.length}</Text>
-                        </View>
-                    </TouchableOpacity>
+      <Modal animationType="slide" transparent visible={modalVisible.details} onRequestClose={() => setModalVisible({ ...modalVisible, details: false })}>
+        <View style={ms.centered}>
+          <View style={ms.modal}>
+            <View style={ms.header}>
+              <Text style={ms.title}>Tour Details</Text>
+              <TouchableOpacity style={ms.close} onPress={() => setModalVisible({ ...modalVisible, details: false })}><MaterialIcons name="close" size={24} color="#666" /></TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={ms.imageSection}>
+                <Image source={{ uri: currentTour.image }} style={ms.heroImage} />
+                <View style={ms.overlay}>
+                  <View style={ms.ratingBadge}><MaterialIcons name="star" size={16} color="#FFD700" /><Text style={ms.ratingText}>{currentTour.rating}</Text></View>
+                  <View style={[ms.statusBadge, { backgroundColor: currentTour.available ? '#4CAF5020' : '#f4433620' }]}>
+                    <MaterialIcons name={currentTour.available ? "check-circle" : "cancel"} size={14} color={currentTour.available ? '#4CAF50' : '#f44336'} />
+                    <Text style={[ms.statusText, { color: currentTour.available ? '#4CAF50' : '#f44336' }]}>{currentTour.available ? 'Available' : 'Unavailable'}</Text>
+                  </View>
                 </View>
-
-                {/* Stats Section */}
-                <View style={styles.statsContainer}>
-                    {statsCards.map((stat, index) => (
-                        <View key={index} style={styles.statCard}>
-                            <View style={styles.statHeader}>
-                                <View style={[styles.iconContainer, { backgroundColor: `${stat.color}15` }]}>
-                                    <MaterialIcons name={stat.icon as any} size={24} color={stat.color} />
-                                </View>
-                                <View style={styles.trendContainer}>
-                                    <MaterialIcons
-                                        name={stat.trend.startsWith('+') ? "trending-up" : "trending-down"}
-                                        size={16}
-                                        color={stat.trend.startsWith('+') ? "#4CAF50" : "#f44336"}
-                                    />
-                                    <Text style={[styles.trendText, { color: stat.trend.startsWith('+') ? "#4CAF50" : "#f44336" }]}>
-                                        {stat.trend}
-                                    </Text>
-                                </View>
-                            </View>
-                            <Text style={styles.statValue}>{stat.value}</Text>
-                            <Text style={styles.statLabel}>{stat.label}</Text>
-                            <Text style={styles.statSubtitle}>{stat.subtitle}</Text>
-                        </View>
+              </View>
+              <View style={ms.titleSection}>
+                <Text style={ms.tourTitle}>{currentTour.title}</Text>
+                <Text style={ms.tourPrice}>{currentTour.price}</Text>
+              </View>
+              <View style={ms.section}>
+                <Text style={ms.sectionTitle}>Tour Features</Text>
+                {currentTour.features && currentTour.features.length > 0 ? (
+                  <View style={ms.features}>
+                    {currentTour.features.map((f, i) => (
+                      <View key={`${f.text}_${i}`} style={[ms.feature, !f.available && ms.unavailable]}>
+                        <MaterialIcons name={featureIcons[f.text] || 'info'} size={20} color={f.available ? '#4CAF50' : '#ccc'} />
+                        <Text style={[ms.featureText, !f.available && ms.unavailableText]}>{f.text}</Text>
+                        {f.available && <MaterialIcons name="check" size={16} color="#4CAF50" />}
+                      </View>
                     ))}
-                </View>
-
-                {/* Quick Actions */}
-                <View style={styles.quickActions}>
-                    <Text style={styles.sectionTitle}>Quick Actions</Text>
-                    <View style={styles.actionGrid}>
-                        <TouchableOpacity
-                            style={styles.quickActionCard}
-                            onPress={() => router.push('/manage-tours')}
-                        >
-                            <MaterialIcons name="add-circle-outline" size={32} color="#f57c00" />
-                            <Text style={styles.quickActionText}>Add Tour</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.quickActionCard}
-                            onPress={() => router.push('/bookings')}
-                        >
-                            <MaterialIcons name="book-online" size={32} color="#4CAF50" />
-                            <Text style={styles.quickActionText}>View Booking</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.quickActionCard}
-                            onPress={() => router.push('/reports')}
-                        >
-                            <MaterialIcons name="assessment" size={32} color="#2196F3" />
-                            <Text style={styles.quickActionText}>View Reports</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.quickActionCard}
-                            onPress={() => router.push('/settings')}
-                        >
-                            <MaterialIcons name="settings" size={32} color="#9C27B0" />
-                            <Text style={styles.quickActionText}>Settings</Text>
-                        </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={ms.noFeaturesText}>No features available for this tour.</Text>
+                )}
+              </View>
+              <View style={ms.section}>
+                <Text style={ms.sectionTitle}>Tour Information</Text>
+                <View style={ms.details}>
+                  {tourDetails.map((d, i) => (
+                    <View key={i} style={ms.detail}>
+                      <View style={ms.detailIcon}><MaterialIcons name={d.icon} size={18} color="#f57c00" /></View>
+                      <View>
+                        <Text style={ms.detailLabel}>{d.label}</Text>
+                        <Text style={ms.detailValue}>{d.value}</Text>
+                      </View>
                     </View>
+                  ))}
                 </View>
-
-                {/* Pending Bookings */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Pending Bookings</Text>
-                        <TouchableOpacity onPress={() => router.push('/bookings')}>
-                            <Text style={styles.viewAllText}>View All</Text>
-                        </TouchableOpacity>
+              </View>
+              <View style={ms.section}>
+                <Text style={ms.sectionTitle}>Performance Stats</Text>
+                <View style={ms.stats}>
+                  {[
+                    { icon: 'trending-up', value: currentTour.bookings, label: 'Total Bookings', color: '#4CAF50' },
+                    { icon: 'star-rate', value: currentTour.rating, label: 'Average Rating', color: '#FFD700' },
+                    { icon: 'people', value: currentTour.max_capacity, label: 'Max Capacity', color: '#2196F3' }
+                  ].map((s, i) => (
+                    <View key={i} style={ms.stat}>
+                      <MaterialIcons name={s.icon} size={24} color={s.color} />
+                      <Text style={ms.statValue}>{s.value}</Text>
+                      <Text style={ms.statLabel}>{s.label}</Text>
                     </View>
-
-                    {pendingBookings.length > 0 ? (
-                        pendingBookings.map((booking) => (
-                            <View key={booking.id} style={styles.bookingCard}>
-                                <View style={styles.bookingLeft}>
-                                    <View style={styles.bookingHeader}>
-                                        <Text style={styles.bookingId}>#{booking.id.slice(0, 8)}</Text>
-                                        <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(booking.status)}15` }]}>
-                                            <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
-                                                {booking.status}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.customerName}>{booking.customer}</Text>
-                                    <Text style={styles.tourType}>{booking.tourType}</Text>
-                                    <View style={styles.bookingInfo}>
-                                        <MaterialIcons name="calendar-today" size={14} color="#666" />
-                                        <Text style={styles.bookingDate}>{formatDate(booking.date)}</Text>
-                                        <MaterialIcons name="attach-money" size={14} color="#666" style={{ marginLeft: 10 }} />
-                                        <Text style={styles.bookingAmount}>{booking.amount}</Text>
-                                        <MaterialIcons name="people" size={14} color="#666" style={{ marginLeft: 10 }} />
-                                        <Text style={styles.bookingAmount}>{booking.number_of_people}</Text>
-                                    </View>
-                                </View>
-                                <View style={styles.bookingActions}>
-                                    <TouchableOpacity 
-                                        style={[styles.actionButton, styles.approveButton]}
-                                        onPress={() => handleBookingAction(booking.id, 'confirmed')}
-                                    >
-                                        <MaterialIcons name="check" size={16} color="#fff" />
-                                        <Text style={styles.actionText}>Approve</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity 
-                                        style={[styles.actionButton, styles.rejectButton]}
-                                        onPress={() => handleBookingAction(booking.id, 'cancelled')}
-                                    >
-                                        <MaterialIcons name="close" size={16} color="#fff" />
-                                        <Text style={styles.actionText}>Reject</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        ))
-                    ) : (
-                        <View style={styles.noDataCard}>
-                            <MaterialIcons name="event-available" size={48} color="#ccc" />
-                            <Text style={styles.noDataText}>No pending bookings</Text>
-                            <Text style={styles.noDataSubtext}>All bookings are up to date!</Text>
-                        </View>
-                    )}
+                  ))}
                 </View>
-
-                {/* Manage Tours */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Regular Tours</Text>
-                        <TouchableOpacity onPress={() => router.push('/manage-tours')}>
-                            <Text style={styles.viewAllText}>View All</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {tours.length > 0 ? (
-                        tours.map((tour) => (
-                            <View key={tour.id} style={styles.manageCard}>
-                                <Image source={{ uri: tour.image }} style={styles.manageImage} />
-                                <View style={styles.manageContent}>
-                                    <View style={styles.manageHeader}>
-                                        <Text style={styles.manageTitle}>{tour.title}</Text>
-                                        <View style={styles.ratingContainer}>
-                                            <MaterialIcons name="star" size={16} color="#FFD700" />
-                                            <Text style={styles.ratingText}>{tour.rating}</Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.managePrice}>{tour.price}</Text>
-                                    <View style={styles.manageInfo}>
-                                        <View style={styles.infoItem}>
-                                            <MaterialIcons name="access-time" size={14} color="#666" />
-                                            <Text style={styles.infoText}>{tour.duration}</Text>
-                                        </View>
-                                        <View style={styles.infoItem}>
-                                            <MaterialIcons name="people" size={14} color="#666" />
-                                            <Text style={styles.infoText}>{tour.bookings} bookings</Text>
-                                        </View>
-                                        <View style={styles.infoItem}>
-                                            <MaterialIcons name="location-on" size={14} color="#666" />
-                                            <Text style={styles.infoText}>{tour.location}</Text>
-                                        </View>
-                                        <View style={styles.infoItem}>
-                                            <Text style={styles.infoText}>{tour.type.toUpperCase()}</Text>
-                                        </View>
-                                    </View>
-                                    <View style={styles.manageActions}>
-                                        <TouchableOpacity
-                                            style={[styles.actionButton, styles.viewButton]}
-                                            onPress={() => handleViewPress(tour)}
-                                        >
-                                            <MaterialIcons name="visibility" size={16} color="#fff" />
-                                            <Text style={styles.actionText}>View</Text>
-                                        </TouchableOpacity>
-                                    
-                                    </View>
-                                </View>
-                            </View>
-                        ))
-                    ) : (
-                        <View style={styles.noDataCard}>
-                            <MaterialIcons name="event-busy" size={48} color="#ccc" />
-                            <Text style={styles.noDataText}>No regular tours found</Text>
-                            <Text style={styles.noDataSubtext}>Add new tours to manage them here!</Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Manage Combo Packages */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Combo Packages</Text>
-                        <TouchableOpacity onPress={() => router.push('/manage-tours')}>
-                            <Text style={styles.viewAllText}>View All</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {comboPackages.length > 0 ? (
-                        comboPackages.map((tour) => (
-                            <View key={tour.id} style={styles.manageCard}>
-                                <Image source={{ uri: tour.image }} style={styles.manageImage} />
-                                <View style={styles.manageContent}>
-                                    <View style={styles.manageHeader}>
-                                        <Text style={styles.manageTitle}>{tour.title}</Text>
-                                        <View style={styles.ratingContainer}>
-                                            <MaterialIcons name="star" size={16} color="#FFD700" />
-                                            <Text style={styles.ratingText}>{tour.rating}</Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.managePrice}>{tour.price}</Text>
-                                    <View style={styles.manageInfo}>
-                                        <View style={styles.infoItem}>
-                                            <MaterialIcons name="access-time" size={14} color="#666" />
-                                            <Text style={styles.infoText}>{tour.duration}</Text>
-                                        </View>
-                                        <View style={styles.infoItem}>
-                                            <MaterialIcons name="people" size={14} color="#666" />
-                                            <Text style={styles.infoText}>{tour.bookings} bookings</Text>
-                                        </View>
-                                        <View style={styles.infoItem}>
-                                            <MaterialIcons name="location-on" size={14} color="#666" />
-                                            <Text style={styles.infoText}>{tour.location}</Text>
-                                        </View>
-                                        <View style={styles.infoItem}>
-                                            <Text style={styles.infoText}>{tour.type.toUpperCase()}</Text>
-                                        </View>
-                                    </View>
-                                    <View style={styles.manageActions}>
-                                        <TouchableOpacity
-                                            style={[styles.actionButton, styles.viewButton]}
-                                            onPress={() => handleViewPress(tour)}
-                                        >
-                                            <MaterialIcons name="visibility" size={16} color="#fff" />
-                                            <Text style={styles.actionText}>View</Text>
-                                        </TouchableOpacity>
-                                        
-                                    </View>
-                                </View>
-                            </View>
-                        ))
-                    ) : (
-                        <View style={styles.noDataCard}>
-                            <MaterialIcons name="event-busy" size={48} color="#ccc" />
-                            <Text style={styles.noDataText}>No combo packages found</Text>
-                            <Text style={styles.noDataSubtext}>Add new packages to manage them here!</Text>
-                        </View>
-                    )}
-                </View>
+              </View>
             </ScrollView>
-            <EditTourModal />
-            <ViewTourModal />
+            <View style={ms.actions}>
+              <TouchableOpacity
+                style={[ms.action, ms.bookingsAction]}
+                onPress={() => {
+                  setModalVisible({ ...modalVisible, details: false });
+                  router.push(`/manage-tours?tourId=${currentTour.id}&search=${encodeURIComponent(currentTour.title)}`);
+                }}
+              >
+                <MaterialIcons name="book-online" size={18} color="#fff" />
+                <Text style={ms.actionText}>View Tour</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
+      </Modal>
     );
+  };
+
+  const StatChart = ({ type, title, value, trend, icon, iconColor, dataKey, chartColor }: { type: 'line' | 'pie' | 'progress'; title: string; value: string; trend: string; icon: string; iconColor: string; dataKey: keyof DashboardStats; chartColor: string }) => {
+    if (!stats || stats[dataKey] == null) return <View style={s.card}><Text style={s.noData}>No data</Text></View>;
+
+    const chartData = type === 'line' ? {
+      labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'].slice(-(stats[dataKey] as number[]).length),
+      datasets: [{ data: stats[dataKey] as number[], color: () => chartColor, strokeWidth: 2 }]
+    } : type === 'pie' ? [
+      { name: 'Regular', population: stats.tourTypeDistribution.regular, color: '#2196F3', legendFontColor: '#333', legendFontSize: 8 },
+      { name: 'Combo', population: stats.tourTypeDistribution.combo, color: '#9C27B0', legendFontColor: '#333', legendFontSize: 8 }
+    ].filter(item => item.population > 0) : { data: [Math.min(stats.activeCustomers / Math.max(stats.activeCustomers || 1, 10), 1)] };
+
+    return (
+      <View style={s.card}>
+        <View style={s.statHeader}>
+          <View style={[s.icon, { backgroundColor: `${iconColor}15` }]}><MaterialIcons name={icon} size={18} color={iconColor} /></View>
+          <View style={s.trend}>
+            <MaterialIcons name={trend.startsWith('+') ? 'trending-up' : 'trending-down'} size={12} color={trend.startsWith('+') ? '#4CAF50' : '#f44336'} />
+            <Text style={[s.trendText, { color: trend.startsWith('+') ? '#4CAF50' : '#f44336' }]}>{trend}</Text>
+          </View>
+        </View>
+        <Text style={s.statValue}>{value}</Text>
+        <Text style={s.statLabel}>{title}</Text>
+        {type === 'line' && <LineChart data={chartData} width={width * 0.4} height={100} chartConfig={{ ...chartConfig, color: () => chartColor }} bezier style={s.chart} />}
+        {type === 'pie' && chartData.length > 0 && <PieChart data={chartData} width={width * 0.4} height={100} chartConfig={{ ...chartConfig, color: () => '#2196F3' }} accessor="population" backgroundColor="transparent" paddingLeft="10" center={[10, 0]} style={s.chart} />}
+        {type === 'progress' && (
+          <ProgressChart
+            data={chartData}
+            width={width * 0.4}
+            height={100}
+            strokeWidth={8}
+            radius={25}
+            chartConfig={{ ...chartConfig, color: () => chartColor }}
+            hideLegend
+            style={s.chart}
+            accessible={true}
+            accessibilityLabel="Total Users Chart"
+          />
+        )}
+      </View>
+    );
+  };
+
+  if (loading && !refreshing) return <View style={[s.container, s.center]}><ActivityIndicator size="large" color="#f57c00" /><Text style={s.loading}>Loading...</Text></View>;
+  if (error) return <View style={[s.container, s.center]}><Text style={s.error}>Error: {error}</Text><TouchableOpacity style={s.retry} onPress={fetchDashboardData}><Text style={s.retryText}>Try Again</Text></TouchableOpacity></View>;
+
+  return (
+    <View style={s.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchDashboardData(); }} />}>
+        <View style={s.header}>
+          <View>
+            <Text style={s.headerTitle}>Admin Dashboard</Text>
+            <Text style={s.headerSubtitle}>Manage your tours</Text>
+          </View>
+          <TouchableOpacity
+            style={s.notification}
+            onPress={() => setModalVisible({ ...modalVisible, notifications: true })}
+          >
+            <MaterialIcons name="notifications-outline" size={24} color="#f57c00" />
+            <View style={s.badge}><Text style={s.badgeText}>{pendingBookings.length}</Text></View>
+          </TouchableOpacity>
+        </View>
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Analytics Overview</Text>
+          <View style={s.analytics}>
+            {[
+              { type: 'line', title: 'Total Bookings', value: stats?.totalBookings.toString() || '0', trend: stats?.bookingsTrend || '0%', icon: 'book-online', iconColor: '#4CAF50', dataKey: 'monthlyBookings', chartColor: '#4CAF50' },
+              { type: 'line', title: 'Total Revenue', value: `₱${stats?.totalRevenue.toLocaleString() || '0'}`, trend: stats?.revenueTrend || '0%', icon: 'attach-money', iconColor: '#f57c00', dataKey: 'monthlyRevenue', chartColor: '#f57c00' },
+              { type: 'pie', title: 'Available Tours', value: stats?.upcomingTours.toString() || '0', trend: '+3', icon: 'tour', iconColor: '#2196F3', dataKey: 'tourTypeDistribution', chartColor: '#2196F3' },
+              { type: 'progress', title: 'Total Users', value: stats?.activeCustomers.toString() || '0', trend: '+15%', icon: 'people', iconColor: '#9C27B0', dataKey: 'activeCustomers', chartColor: '#9C27B0' }
+            ].map((c, i) => <StatChart key={i} {...c} />)}
+          </View>
+        </View>
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Quick Actions</Text>
+          <View style={s.actions}>
+            {[
+              { icon: 'add-circle-outline', text: 'Add Tour', route: '/manage-tours', color: '#f57c00' },
+              { icon: 'book-online', text: 'View Booking', route: '/bookings', color: '#4CAF50' },
+              { icon: 'assessment', text: 'View Reports', route: '/reports', color: '#2196F3' },
+              { icon: 'settings', text: 'Settings', route: '/settings', color: '#9C27B0' }
+            ].map(({ icon, text, route, color }, i) => (
+              <TouchableOpacity key={i} style={s.actionCard} onPress={() => router.push(route)}>
+                <MaterialIcons name={icon} size={32} color={color} />
+                <Text style={s.actionText}>{text}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionTitle}>Pending Bookings</Text>
+            <TouchableOpacity onPress={() => router.push('/bookings')}><Text style={s.viewAll}>View All</Text></TouchableOpacity>
+          </View>
+          {pendingBookings.length ? pendingBookings.map(b => (
+            <TouchableOpacity 
+              key={b.id} 
+              style={s.bookingCard}
+              onPress={() => router.push(`/bookings?bookingId=${b.id}`)}
+            >
+              <View style={s.bookingLeft}>
+                <View style={s.bookingHeader}>
+                  <Text style={s.bookingId}>#{b.id.slice(0, 8)}</Text>
+                  <View style={[s.statusBadge, { backgroundColor: `${({ pending: '#FF9800', confirmed: '#4CAF50', cancelled: '#f44336', completed: '#2196F3', 'cancel-requested': '#FF5722' }[b.status.toLowerCase()] || '#666')}15` }]}>
+                    <Text style={[s.statusText, { color: ({ pending: '#FF9800', confirmed: '#4CAF50', cancelled: '#f44336', completed: '#2196F3', 'cancel-requested': '#FF5722' }[b.status.toLowerCase()] || '#666') }]}>{b.notificationType}</Text>
+                  </View>
+                </View>
+                <Text style={s.customer}>{b.customer}</Text>
+                <Text style={s.tourType}>{b.tourType}</Text>
+                <View style={s.bookingInfo}>
+                  <MaterialIcons name="calendar-today" size={14} color="#666" />
+                  <Text style={s.bookingDate}>{new Date(b.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+                  <MaterialIcons name="attach-money" size={14} color="#666" style={{ marginLeft: 10 }} />
+                  <Text style={s.bookingAmount}>{b.amount}</Text>
+                  <MaterialIcons name="people" size={14} color="#666" style={{ marginLeft: 10 }} />
+                  <Text style={s.bookingAmount}>{b.number_of_people}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          )) : (
+            <View style={s.noDataCard}>
+              <MaterialIcons name="event-available" size={48} color="#ccc" />
+              <Text style={s.noData}>No pending bookings</Text>
+              <Text style={s.noDataSub}>All bookings up to date!</Text>
+            </View>
+          )}
+        </View>
+        {['Regular Tours', 'Combo Packages'].map((title, i) => (
+          <View key={title} style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>{title}</Text>
+              <TouchableOpacity onPress={() => router.push('/manage-tours')}><Text style={s.viewAll}>View All</Text></TouchableOpacity>
+            </View>
+            {(i === 0 ? tours : comboPackages).length ? (i === 0 ? tours : comboPackages).map(t => (
+              <TouchableOpacity key={t.id} style={s.manageCard} onPress={() => { setCurrentTour(t); setModalVisible({ ...modalVisible, details: true }); }}>
+                <Image source={{ uri: t.image }} style={s.manageImage} />
+                <View style={s.manageContent}>
+                  <View style={s.manageHeader}>
+                    <Text style={s.manageTitle}>{t.title}</Text>
+                    <View style={s.rating}><MaterialIcons name="star" size={16} color="#FFD700" /><Text style={s.ratingText}>{t.rating}</Text></View>
+                  </View>
+                  <Text style={s.managePrice}>{t.price}</Text>
+                  <View style={s.manageInfo}>
+                    <View style={s.infoItem}><MaterialIcons name="access-time" size={14} color="#666" /><Text style={s.infoText}>{t.duration}</Text></View>
+                    <View style={s.infoItem}><MaterialIcons name="people" size={14} color="#666" /><Text style={s.infoText}>{t.bookings} bookings</Text></View>
+                    <View style={s.infoItem}><MaterialIcons name="location-on" size={14} color="#666" /><Text style={s.infoText}>{t.location}</Text></View>
+                    <View style={s.infoItem}><Text style={s.infoText}>{t.type.toUpperCase()}</Text></View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            )) : (
+              <View style={s.noDataCard}>
+                <MaterialIcons name="event-busy" size={48} color="#ccc" />
+                <Text style={s.noData}>No {title.toLowerCase()} found</Text>
+                <Text style={s.noDataSub}>Add new {title.toLowerCase()} to manage!</Text>
+              </View>
+            )}
+          </View>
+        ))}
+      </ScrollView>
+      <TourDetailsModal />
+      <NotificationModal />
+    </View>
+  );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f5f5f5',
-        paddingHorizontal: 20,
-    },
-    loadingContainer: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        marginTop: 10,
-        color: '#666',
-    },
-    errorContainer: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    errorText: {
-        color: '#f44336',
-        fontSize: 16,
-        textAlign: 'center',
-    },
-    retryButton: {
-        marginTop: 20,
-        backgroundColor: '#f57c00',
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 8,
-    },
-    retryText: {
-        color: '#fff',
-        fontWeight: 'bold',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingTop: 60,
-        paddingBottom: 20,
-    },
-    headerTitle: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#333',
-    },
-    headerSubtitle: {
-        fontSize: 14,
-        color: '#666',
-        marginTop: 4,
-    },
-    notificationButton: {
-        backgroundColor: '#fff',
-        padding: 10,
-        borderRadius: 24,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    notificationBadge: {
-        position: 'absolute',
-        top: 4,
-        right: 4,
-        backgroundColor: '#f44336',
-        borderRadius: 8,
-        width: 16,
-        height: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    badgeText: {
-        color: '#fff',
-        fontSize: 10,
-        fontWeight: 'bold',
-    },
-    statsContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
-        marginBottom: 20,
-    },
-    statCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        width: '48%',
-        marginBottom: 15,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    statHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    iconContainer: {
-        padding: 8,
-        borderRadius: 8,
-    },
-    trendContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    trendText: {
-        marginLeft: 4,
-        fontWeight: 'bold',
-        fontSize: 12,
-    },
-    statValue: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#333',
-    },
-    statLabel: {
-        fontSize: 14,
-        color: '#888',
-        marginTop: 4,
-    },
-    statSubtitle: {
-        fontSize: 12,
-        color: '#aaa',
-        marginTop: 2,
-    },
-    quickActions: {
-        marginBottom: 20,
-    },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#333',
-        marginBottom: 15,
-    },
-    actionGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
-    },
-    quickActionCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        width: '48%',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 15,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    quickActionText: {
-        marginTop: 8,
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#555',
-    },
-    section: {
-        marginBottom: 20,
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 15,
-    },
-    viewAllText: {
-        color: '#f57c00',
-        fontWeight: 'bold',
-    },
-    bookingCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 10,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    bookingLeft: {
-        flex: 1,
-        marginRight: 10,
-    },
-    bookingHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    bookingId: {
-        fontSize: 12,
-        color: '#888',
-        fontWeight: 'bold',
-    },
-    statusBadge: {
-        paddingVertical: 2,
-        paddingHorizontal: 8,
-        borderRadius: 10,
-    },
-    statusText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        textTransform: 'capitalize',
-    },
-    customerName: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#333',
-        marginTop: 5,
-    },
-    tourType: {
-        fontSize: 14,
-        color: '#666',
-        marginTop: 2,
-    },
-    bookingInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    bookingDate: {
-        fontSize: 12,
-        color: '#666',
-        marginLeft: 4,
-    },
-    bookingAmount: {
-        fontSize: 12,
-        color: '#666',
-        fontWeight: 'bold',
-        marginLeft: 4,
-    },
-    bookingActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    actionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-    },
-    approveButton: {
-        backgroundColor: '#4CAF50',
-    },
-    rejectButton: {
-        backgroundColor: '#f44336',
-    },
-    actionText: {
-        color: '#fff',
-        fontSize: 12,
-        marginLeft: 4,
-        fontWeight: 'bold',
-    },
-    noDataCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 10,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    noDataText: {
-        fontSize: 16,
-        color: '#888',
-        marginTop: 10,
-        fontWeight: 'bold',
-    },
-    noDataSubtext: {
-        fontSize: 12,
-        color: '#aaa',
-        marginTop: 4,
-    },
-    manageCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        marginBottom: 15,
-        overflow: 'hidden',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    manageImage: {
-        width: '100%',
-        height: 150,
-        resizeMode: 'cover',
-    },
-    manageContent: {
-        padding: 15,
-    },
-    manageHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-    },
-    manageTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#333',
-        flexShrink: 1,
-    },
-    ratingContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#FFD70030',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 10,
-    },
-    ratingText: {
-        fontSize: 12,
-        color: '#333',
-        marginLeft: 4,
-        fontWeight: 'bold',
-    },
-    managePrice: {
-        fontSize: 16,
-        color: '#f57c00',
-        fontWeight: 'bold',
-        marginTop: 5,
-    },
-    manageInfo: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginTop: 10,
-    },
-    infoItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginRight: 15,
-        marginBottom: 5,
-    },
-    infoText: {
-        fontSize: 12,
-        color: '#666',
-        marginLeft: 4,
-    },
-    manageActions: {
-        flexDirection: 'row',
-        marginTop: 10,
-        gap: 8,
-    },
-    editButton: {
-        backgroundColor: '#2196F3',
-    },
-    viewButton: {
-        backgroundColor: '#666',
-    }
+// Styles remain unchanged
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f5f5f5', paddingHorizontal: 20 },
+  center: { justifyContent: 'center', alignItems: 'center' },
+  loading: { marginTop: 10, color: '#666' },
+  error: { color: '#f44336', fontSize: 16, textAlign: 'center' },
+  retry: { marginTop: 20, backgroundColor: '#f57c00', padding: 10, borderRadius: 8 },
+  retryText: { color: '#fff', fontWeight: 'bold' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 20, paddingTop: 60 },
+  headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#333' },
+  headerSubtitle: { fontSize: 14, color: '#666', marginTop: 4 },
+  notification: { backgroundColor: '#fff', padding: 10, borderRadius: 24, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  badge: { position: 'absolute', top: 4, right: 4, backgroundColor: '#f44336', borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center' },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  analytics: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
+  card: { backgroundColor: '#fff', borderRadius: 12, padding: 14, width: '48%', marginBottom: 12, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15 },
+  statHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  icon: { padding: 6, borderRadius: 8 },
+  trend: { flexDirection: 'row', alignItems: 'center' },
+  trendText: { marginLeft: 4, fontWeight: 'bold', fontSize: 11 },
+  statValue: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 4 },
+  statLabel: { fontSize: 13, color: '#888', marginBottom: 8 },
+  chart: { borderRadius: 8, alignSelf: 'center' },
+  noData: { fontSize: 12, color: '#888', textAlign: 'center', marginTop: 20, fontWeight: '500' },
+  section: { marginBottom: 20 },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  actionCard: { backgroundColor: '#fff', borderRadius: 12, padding: 15, width: '48%', alignItems: 'center', marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  actionText: { marginTop: 8, fontSize: 14, fontWeight: 'bold', color: '#555' },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  viewAll: { color: '#f57c00', fontWeight: 'bold' },
+  bookingCard: { backgroundColor: '#fff', borderRadius: 12, padding: 15, marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  bookingLeft: { flex: 1 },
+  bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  bookingId: { fontSize: 12, color: '#888', fontWeight: 'bold' },
+  statusBadge: { paddingVertical: 2, paddingHorizontal: 8, borderRadius: 10 },
+  statusText: { fontSize: 10, fontWeight: 'bold', textTransform: 'capitalize' },
+  customer: { fontSize: 16, fontWeight: 'bold', color: '#333', marginTop: 5 },
+  tourType: { fontSize: 14, color: '#666', marginTop: 2 },
+  bookingInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  bookingDate: { fontSize: 12, color: '#666', marginLeft: 4 },
+  bookingAmount: { fontSize: 12, color: '#666', fontWeight: 'bold', marginLeft: 4 },
+  noDataCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20, alignItems: 'center', marginTop: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  noDataSub: { fontSize: 12, color: '#aaa', marginTop: 4 },
+  manageCard: { backgroundColor: '#fff', borderRadius: 12, marginBottom: 15, overflow: 'hidden', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  manageImage: { width: '100%', height: 150, resizeMode: 'cover' },
+  manageContent: { padding: 15 },
+  manageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  manageTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', flexShrink: 1 },
+  rating: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFD70030', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  ratingText: { fontSize: 12, color: '#333', marginLeft: 4, fontWeight: 'bold' },
+  managePrice: { fontSize: 16, color: '#f57c00', fontWeight: 'bold', marginTop: 5 },
+  manageInfo: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
+  infoItem: { flexDirection: 'row', alignItems: 'center', marginRight: 15, marginBottom: 5 },
+  infoText: { fontSize: 12, color: '#666', marginLeft: 4 }
 });
 
-const modalStyles = StyleSheet.create({
-    centeredView: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.5)',
-    },
-    modalView: {
-        width: '90%',
-        maxWidth: 400,
-        backgroundColor: 'white',
-        borderRadius: 16,
-        padding: 15,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-        elevation: 5,
-        maxHeight: '75%', // Limit height to make it scrollable
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 10,
-        textAlign: 'center',
-        color: '#333',
-    },
-    label: {
-        fontSize: 13,
-        color: '#666',
-        marginTop: 8,
-        marginBottom: 4,
-    },
-    input: {
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 8,
-        padding: 8,
-        fontSize: 15,
-        color: '#333',
-        backgroundColor: '#f9f9f9',
-    },
-    staticInput: {
-        borderWidth: 1,
-        borderColor: '#eee',
-        borderRadius: 8,
-        padding: 10,
-        fontSize: 16,
-        color: '#333',
-        backgroundColor: '#f9f9f9',
-    },
-    imagePickerContainer: {
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    imageContainer: {
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    tourImage: {
-        width: '100%',
-        height: 120, // Smaller image height
-        borderRadius: 8,
-        resizeMode: 'cover',
-    },
-    changeImageButton: {
-        marginTop: 8,
-        padding: 7,
-        backgroundColor: '#f57c00',
-        borderRadius: 8,
-    },
-    changeImageText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        fontSize: 13,
-    },
-    buttonContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginTop: 15,
-    },
-    button: {
-        borderRadius: 8,
-        padding: 10,
-        elevation: 2,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flex: 1,
-    },
-    cancelButton: {
-        backgroundColor: '#f44336',
-        marginRight: 8,
-    },
-    saveButton: {
-        backgroundColor: '#4CAF50',
-        marginLeft: 8,
-    },
-    closeButton: {
-        backgroundColor: '#666',
-    },
-    textStyle: {
-        color: 'white',
-        fontWeight: 'bold',
-        textAlign: 'center',
-        fontSize: 14,
-    },
+const ms = StyleSheet.create({
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modal: { width: '95%', maxWidth: 400, backgroundColor: '#fff', borderRadius: 16, padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, elevation: 5, maxHeight: '75%' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  close: { padding: 5 },
+  section: { paddingHorizontal: 20, marginBottom: 25 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  imageSection: { position: 'relative', marginBottom: 20 },
+  heroImage: { width: '100%', height: 200, resizeMode: 'cover' },
+  overlay: { position: 'absolute', top: 15, left: 15, right: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  ratingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.9)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 15 },
+  ratingText: { fontSize: 14, fontWeight: 'bold', color: '#333', marginLeft: 4 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 15 },
+  statusText: { fontSize: 12, fontWeight: 'bold', marginLeft: 4 },
+  titleSection: { paddingHorizontal: 20, marginBottom: 25 },
+  tourTitle: { fontSize: 24, fontWeight: 'bold', color: '#333', marginBottom: 5 },
+  tourPrice: { fontSize: 20, fontWeight: 'bold', color: '#f57c00' },
+  features: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  feature: { flexDirection: 'row', alignItems: 'center', width: '48%', marginBottom: 12, padding: 8, backgroundColor: '#f9f9f9', borderRadius: 8 },
+  unavailable: { opacity: 0.5 },
+  featureText: { fontSize: 13, color: '#333', marginLeft: 8, flex: 1 },
+  unavailableText: { color: '#999' },
+  noFeaturesText: { fontSize: 14, color: '#666', marginBottom: 10 },
+  details: { gap: 12 },
+  detail: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#f9f9f9', borderRadius: 10 },
+  detailIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f57c0020', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  detailLabel: { fontSize: 12, color: '#666', marginBottom: 2 },
+  detailValue: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  stats: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 15, backgroundColor: '#f9f9f9', borderRadius: 12 },
+  stat: { alignItems: 'center' },
+  statValue: { fontSize: 20, fontWeight: 'bold', color: '#333', marginTop: 5 },
+  statLabel: { fontSize: 12, color: '#666', marginTop: 2, textAlign: 'center' },
+  actions: { flexDirection: 'row', padding: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee', gap: 12 },
+  action: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  bookingsAction: { backgroundColor: '#4CAF50' },
+  actionText: { color: '#fff', fontWeight: 'bold', fontSize: 14, marginLeft: 6 },
+  notificationCard: { backgroundColor: '#fff', borderRadius: 12, padding: 15, marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  notificationHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
+  notificationId: { fontSize: 12, color: '#888', fontWeight: 'bold' },
+  notificationCustomer: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 2 },
+  notificationTour: { fontSize: 14, color: '#666', marginBottom: 8 },
+  notificationInfo: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
+  notificationDate: { fontSize: 12, color: '#666', marginLeft: 4 },
+  notificationAmount: { fontSize: 12, color: '#666', fontWeight: 'bold', marginLeft: 4 },
+  noDataCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20, alignItems: 'center', marginTop: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  noData: { fontSize: 16, color: '#888', marginTop: 10, fontWeight: 'bold' },
+  noDataSub: { fontSize: 12, color: '#aaa', marginTop: 4 }
 });

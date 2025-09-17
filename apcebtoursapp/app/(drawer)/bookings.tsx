@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -22,20 +23,24 @@ type Booking = {
   booking_date: string;
   number_of_people: number;
   total_price: number;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'cancel-requested';
   special_requests?: string;
   contact_phone?: string;
   contact_email?: string;
+  profiles?: { full_name: string; first_name: string; last_name: string };
+  tours?: { title: string };
 };
 
 export default function BookingsScreen() {
+  const { bookingId } = useLocalSearchParams();
+  const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
-  
-  // New state variables for the edit modal
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [viewModalVisible, setViewModalVisible] = useState(false);
+  const [emailConfirmationVisible, setEmailConfirmationVisible] = useState(false); // New state for email confirmation modal
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [formData, setFormData] = useState({
     numberOfPeople: '',
@@ -43,15 +48,25 @@ export default function BookingsScreen() {
     contactPhone: '',
   });
 
-  // New state for the view details modal
-  const [viewModalVisible, setViewModalVisible] = useState(false);
+  // Helper function to get display name
+  const getDisplayName = (booking: Booking) => {
+    if (booking.profiles?.full_name) return booking.profiles.full_name;
+    if (booking.profiles?.first_name || booking.profiles?.last_name) {
+      return `${booking.profiles?.first_name || ''} ${booking.profiles?.last_name || ''}`.trim();
+    }
+    return 'N/A';
+  };
 
-  // Define the async function to fetch data from Supabase
+  // Fetch bookings with additional profile and tour information
   const fetchBookings = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('bookings')
-      .select('*')
+      .select(`
+        *,
+        profiles ( full_name, first_name, last_name ),
+        tours ( title )
+      `)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -59,36 +74,107 @@ export default function BookingsScreen() {
       Alert.alert('Error', 'Failed to fetch bookings.');
     } else {
       setBookings(data as Booking[]);
+      data.forEach((booking: Booking) => {
+        if (!booking.profiles?.full_name && !booking.profiles?.first_name && !booking.profiles?.last_name) {
+          console.warn(`Booking ${booking.id} has no associated profile or name data`);
+        }
+      });
     }
     setLoading(false);
   };
 
-  // Fetch data on component mount
-  useEffect(() => {
-    fetchBookings();
-  }, []);
-
-  // Handler for updating booking status
-  const handleStatusChange = async (bookingId: string, newStatus: 'pending' | 'confirmed' | 'completed') => {
-    setLoading(true);
-    const { error } = await supabase
+  // Fetch booking details if bookingId is provided
+  const fetchBookingById = async (id: string) => {
+    const { data, error } = await supabase
       .from('bookings')
-      .update({ status: newStatus })
-      .eq('id', bookingId);
+      .select(`
+        *,
+        profiles ( full_name, first_name, last_name ),
+        tours ( title )
+      `)
+      .eq('id', id)
+      .single();
 
     if (error) {
-      console.error('Error updating booking status:', error.message);
-      Alert.alert('Error', 'Failed to update booking status.');
-    } else {
-      // Optimistically update the local state to reflect the change immediately
-      setBookings(prevBookings => prevBookings.map(booking => 
-        booking.id === bookingId ? { ...booking, status: newStatus } : booking
-      ));
-      console.log(`Successfully changed booking ${bookingId} status to ${newStatus}`);
+      console.error('Error fetching booking by ID:', error.message);
+      Alert.alert('Error', 'Failed to fetch booking details.');
+      return null;
     }
-    setLoading(false);
+
+    return data as Booking;
   };
-  
+
+  useEffect(() => {
+    const initialize = async () => {
+      await fetchBookings();
+      if (bookingId && typeof bookingId === 'string') {
+        const booking = await fetchBookingById(bookingId);
+        if (booking) {
+          const displayName = getDisplayName(booking);
+          // Prioritize display name, then email, then tour title for search query
+          const initialQuery = displayName !== 'N/A' ? displayName : booking.contact_email || booking.tours?.title || '';
+          setSearchQuery(initialQuery);
+          setActiveFilter('All'); // Reset filter to show all bookings with the search query
+        }
+      }
+    };
+    initialize();
+  }, [bookingId]);
+
+  // Handler for updating booking status
+  const handleStatusChange = async (bookingId: string, newStatus: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'cancel-requested') => {
+    setLoading(true);
+    try {
+      const { error: updateError } = await supabase
+        .from('bookings')
+        .update({ status: newStatus })
+        .eq('id', bookingId);
+
+      if (updateError) {
+        throw new Error(`Failed to update booking status: ${updateError.message}`);
+      }
+
+      setBookings(prevBookings =>
+        prevBookings.map(booking =>
+          booking.id === bookingId ? { ...booking, status: newStatus } : booking
+        )
+      );
+
+      if (newStatus === 'cancelled') {
+        try {
+          const response = await fetch(
+            'https://zxzpvrpjavucfrzxkgfo.supabase.co/functions/v1/send-email',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+              },
+              body: JSON.stringify({ bookingId }),
+            }
+          );
+
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.error || 'Failed to send cancellation email');
+          }
+          console.log('Email response:', result);
+          setEmailConfirmationVisible(true); // Show confirmation modal on success
+        } catch (emailError: any) {
+          console.error('Error sending email:', emailError.message);
+          Alert.alert('Warning', 'Booking status updated, but failed to send cancellation email.');
+        }
+      }
+
+      Alert.alert('Success', `Booking status changed to ${newStatus}`);
+    } catch (error: any) {
+      console.error('Error updating booking status:', error.message);
+      Alert.alert('Error', error.message || 'Failed to update booking status.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Handler for opening the edit modal
   const handleEditBooking = (booking: Booking) => {
     setEditingBooking(booking);
@@ -105,7 +191,7 @@ export default function BookingsScreen() {
     setEditingBooking(booking);
     setViewModalVisible(true);
   };
-  
+
   // Handler for saving edits
   const handleSaveEdit = async () => {
     if (!editingBooking) return;
@@ -124,7 +210,6 @@ export default function BookingsScreen() {
         throw error;
       }
 
-      // Optimistically update the local state
       setBookings(prevBookings => prevBookings.map(booking => 
         booking.id === editingBooking.id 
           ? { ...booking, 
@@ -138,9 +223,8 @@ export default function BookingsScreen() {
       Alert.alert('Success', 'Booking updated successfully!');
       setEditModalVisible(false);
       setEditingBooking(null);
-    } catch (error) {
-      console.error('Error updating booking:', error.message);
-      Alert.alert('Error', 'Failed to update booking.');
+    } catch (error: any) {
+      console.error(error.message);
     }
   };
 
@@ -149,15 +233,21 @@ export default function BookingsScreen() {
     setEditingBooking(null);
   };
 
-  const filterOptions = ['All', 'Pending', 'Confirmed', 'Completed'];
+  const closeEmailConfirmationModal = () => {
+    setEmailConfirmationVisible(false); // Close the email confirmation modal
+  };
+
+  const filterOptions = ['All', 'Pending', 'Confirmed', 'Completed', 'Cancel-Requested', 'Cancelled'];
 
   // Filter bookings based on search query and status
   const filteredBookings = bookings.filter(booking => {
     const matchesSearch = booking.contact_email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          booking.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          booking.tour_id.toLowerCase().includes(searchQuery.toLowerCase());
+                         getDisplayName(booking).toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         booking.tours?.title?.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesFilter = activeFilter === 'All' || booking.status === activeFilter.toLowerCase();
+    const matchesFilter = activeFilter === 'All' || 
+                         booking.status === activeFilter.toLowerCase() ||
+                         (activeFilter === 'Cancel-Requested' && booking.status === 'cancel-requested');
     
     return matchesSearch && matchesFilter;
   });
@@ -167,6 +257,8 @@ export default function BookingsScreen() {
       case 'pending': return '#FF9800';
       case 'confirmed': return '#4CAF50';
       case 'completed': return '#2196F3';
+      case 'cancelled': return '#F44336';
+      case 'cancel-requested': return '#FF5722';
       default: return '#666';
     }
   };
@@ -176,6 +268,8 @@ export default function BookingsScreen() {
       case 'pending': return 'schedule';
       case 'confirmed': return 'check-circle';
       case 'completed': return 'done-all';
+      case 'cancelled': return 'cancel';
+      case 'cancel-requested': return 'warning';
       default: return 'help';
     }
   };
@@ -262,12 +356,24 @@ export default function BookingsScreen() {
 
             <ScrollView style={styles.modalBody}>
               <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Booking ID:</Text>
-                <Text style={styles.detailValue}>{editingBooking.id}</Text>
+                <Text style={styles.detailLabel}>Full Name:</Text>
+                <Text style={styles.detailValue}>{getDisplayName(editingBooking)}</Text>
               </View>
               <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Tour ID:</Text>
-                <Text style={styles.detailValue}>{editingBooking.tour_id}</Text>
+                <Text style={styles.detailLabel}>Gmail:</Text>
+                <Text style={styles.detailValue}>{editingBooking.contact_email || 'N/A'}</Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Booked Tour:</Text>
+                <Text style={styles.detailValue}>{editingBooking.tours?.title || 'N/A'}</Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Date:</Text>
+                <Text style={styles.detailValue}>{formatDate(editingBooking.booking_date)}</Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Booked Date:</Text>
+                <Text style={styles.detailValue}>{formatDate(editingBooking.created_at)}</Text>
               </View>
               <View style={styles.detailItem}>
                 <Text style={styles.detailLabel}>Status:</Text>
@@ -284,18 +390,6 @@ export default function BookingsScreen() {
                 <Text style={styles.detailValue}>₱{editingBooking.total_price.toLocaleString()}</Text>
               </View>
               <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Booking Date:</Text>
-                <Text style={styles.detailValue}>{formatDate(editingBooking.booking_date)}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Booked On:</Text>
-                <Text style={styles.detailValue}>{formatDate(editingBooking.created_at)}</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Contact Email:</Text>
-                <Text style={styles.detailValue}>{editingBooking.contact_email || 'N/A'}</Text>
-              </View>
-              <View style={styles.detailItem}>
                 <Text style={styles.detailLabel}>Contact Phone:</Text>
                 <Text style={styles.detailValue}>{editingBooking.contact_phone || 'N/A'}</Text>
               </View>
@@ -304,11 +398,65 @@ export default function BookingsScreen() {
                 <Text style={styles.detailValue}>{editingBooking.special_requests || 'None'}</Text>
               </View>
             </ScrollView>
+            
+            {editingBooking.status === 'cancel-requested' && (
+              <View style={styles.actionButtons}>
+                <TouchableOpacity 
+                  style={[styles.actionButton, styles.confirmButton]}
+                  onPress={() => handleStatusChange(editingBooking.id, 'cancelled')}
+                >
+                  <MaterialIcons name="check" size={16} color="#fff" />
+                  <Text style={styles.actionButtonText}>Approve Cancellation</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.actionButton, styles.rejectButton]}
+                  onPress={() => handleStatusChange(editingBooking.id, 'confirmed')}
+                >
+                  <MaterialIcons name="close" size={16} color="#fff" />
+                  <Text style={styles.actionButtonText}>Reject Cancellation</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
     );
   };
+
+  // Render function for the email confirmation modal
+  const renderEmailConfirmationModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={emailConfirmationVisible}
+      onRequestClose={closeEmailConfirmationModal}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Email Confirmation</Text>
+            <TouchableOpacity onPress={closeEmailConfirmationModal}>
+              <MaterialIcons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.modalBody}>
+            <MaterialIcons name="check-circle" size={64} color="#4CAF50" style={styles.confirmIcon} />
+            <Text style={styles.confirmText}>
+              Your cancellation email has been successfully sent to the customer!
+            </Text>
+            <Text style={styles.subConfirmText}>
+              The customer will receive a confirmation shortly. Thank you for your action.
+            </Text>
+          </View>
+          
+          <TouchableOpacity style={styles.saveButton} onPress={closeEmailConfirmationModal}>
+            <Text style={styles.saveButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
 
   return (
     <View style={styles.container}>
@@ -325,7 +473,7 @@ export default function BookingsScreen() {
         <MaterialIcons name="search" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by email, booking ID, or tour ID..."
+          placeholder="Search by name, email, or tour..."
           placeholderTextColor="#999"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -364,7 +512,9 @@ export default function BookingsScreen() {
                     styles.filterBadgeText,
                     { color: filter === activeFilter ? getStatusColor(filter.toLowerCase()) : '#fff' }
                   ]}>
-                    {bookings.filter(b => b.status === filter.toLowerCase()).length}
+                    {filter === 'Cancel-Requested' 
+                      ? bookings.filter(b => b.status === 'cancel-requested').length
+                      : bookings.filter(b => b.status === filter.toLowerCase()).length}
                   </Text>
                 </View>
               )}
@@ -402,46 +552,38 @@ export default function BookingsScreen() {
                 {/* Booking Header */}
                 <View style={styles.bookingHeader}>
                   <View style={styles.bookingIdContainer}>
-                    <Text style={styles.bookingId}>#{booking.id.substring(0, 8)}...</Text>
+                    <Text style={styles.bookingId}>#{booking.tour_id.substring(0, 8)}...</Text>
                     <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(booking.status)}15` }]}>
                       <MaterialIcons 
-                        name={getStatusIcon(booking.status) as any} 
+                        name={getStatusIcon(booking.status)} 
                         size={14} 
-                        color={getStatusColor(booking.status)} 
+                        color={getStatusColor(booking.status)}
                       />
                       <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
-                        {booking.status}
+                        {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </Text>
                     </View>
                   </View>
                   <Text style={styles.bookingAmount}>₱{booking.total_price.toLocaleString()}</Text>
                 </View>
 
-                {/* Customer Info */}
-                <View style={styles.customerInfo}>
-                  <MaterialIcons name="person" size={18} color="#666" />
-                  <Text style={styles.customerName}>{booking.contact_email || 'N/A'}</Text>
-                  <MaterialIcons name="group" size={18} color="#666" style={styles.participantIcon} />
-                  <Text style={styles.participantCount}>{booking.number_of_people} pax</Text>
-                </View>
-
-                {/* Tour Info */}
-                <View style={styles.tourInfo}>
-                  <MaterialIcons name="map" size={18} color="#f57c00" />
-                  <Text style={styles.tourName}>Tour ID: {booking.tour_id}</Text>
-                </View>
-
-                {/* Date Info */}
-                <View style={styles.dateInfo}>
-                  <View style={styles.dateItem}>
-                    <MaterialIcons name="event" size={16} color="#666" />
-                    <Text style={styles.dateLabel}>Tour Date: </Text>
-                    <Text style={styles.dateValue}>{formatDate(booking.booking_date)}</Text>
+                {/* Booking Info */}
+                <View style={styles.bookingInfo}>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Gmail:</Text>
+                    <Text style={styles.detailValue}>{booking.contact_email || 'N/A'}</Text>
                   </View>
-                  <View style={styles.dateItem}>
-                    <MaterialIcons name="schedule" size={16} color="#666" />
-                    <Text style={styles.dateLabel}>Booked: </Text>
-                    <Text style={styles.dateValue}>{formatDate(booking.created_at)}</Text>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Booked Tour:</Text>
+                    <Text style={styles.detailValue}>{booking.tours?.title || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Date:</Text>
+                    <Text style={styles.detailValue}>{formatDate(booking.booking_date)}</Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Booked Date:</Text>
+                    <Text style={styles.detailValue}>{formatDate(booking.created_at)}</Text>
                   </View>
                 </View>
 
@@ -483,7 +625,25 @@ export default function BookingsScreen() {
                       </TouchableOpacity>
                     </>
                   )}
-                  {booking.status === 'completed' && (
+                  {booking.status === 'cancel-requested' && (
+                    <>
+                      <TouchableOpacity 
+                        style={[styles.actionButton, styles.confirmButton]}
+                        onPress={() => handleStatusChange(booking.id, 'cancelled')}
+                      >
+                        <MaterialIcons name="check" size={16} color="#fff" />
+                        <Text style={styles.actionButtonText}>Approve Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[styles.actionButton, styles.rejectButton]}
+                        onPress={() => handleStatusChange(booking.id, 'confirmed')}
+                      >
+                        <MaterialIcons name="close" size={16} color="#fff" />
+                        <Text style={styles.actionButtonText}>Reject Cancel</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {(booking.status === 'completed' || booking.status === 'cancelled') && (
                     <TouchableOpacity 
                       style={[styles.actionButton, styles.viewButton]}
                       onPress={() => handleViewDetails(booking)}
@@ -502,6 +662,7 @@ export default function BookingsScreen() {
       {/* Render the modals */}
       {renderEditModal()}
       {renderViewModal()}
+      {renderEmailConfirmationModal()} {/* Add the new email confirmation modal */}
       
     </View>
   );
@@ -607,25 +768,6 @@ const styles = StyleSheet.create({
   bookingsList: {
     flex: 1,
   },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
   bookingCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -637,7 +779,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     borderWidth: 1,
-    borderColor: '#f5f5f5',
+    borderColor: '#f0f0f0',
   },
   bookingHeader: {
     flexDirection: 'row',
@@ -650,10 +792,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bookingId: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '600',
     color: '#333',
-    marginRight: 12,
+    marginRight: 8,
   },
   statusBadge: {
     flexDirection: 'row',
@@ -668,62 +810,30 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   bookingAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#f57c00',
   },
-  customerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  customerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
-    flex: 1,
-  },
-  participantIcon: {
-    marginLeft: 12,
-  },
-  participantCount: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  tourInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  bookingInfo: {
     marginBottom: 12,
   },
-  tourName: {
-    fontSize: 14,
-    color: '#333',
-    marginLeft: 8,
-    fontWeight: '500',
-    flex: 1,
+  detailItem: {
+    marginBottom: 8,
   },
-  dateInfo: {
-    marginBottom: 16,
-  },
-  dateItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  dateLabel: {
-    fontSize: 12,
+  detailLabel: {
+    fontSize: 13,
+    fontWeight: '600',
     color: '#666',
-    marginLeft: 4,
+    marginBottom: 2,
   },
-  dateValue: {
-    fontSize: 12,
+  detailValue: {
+    fontSize: 14,
     color: '#333',
     fontWeight: '600',
   },
   actionButtons: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   actionButton: {
@@ -732,8 +842,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    flex: 1,
-    justifyContent: 'center',
+    marginRight: 8,
   },
   confirmButton: {
     backgroundColor: '#4CAF50',
@@ -742,14 +851,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#2196F3',
   },
   completeButton: {
-    backgroundColor: '#FF9800',
+    backgroundColor: '#1976D2',
+  },
+  rejectButton: {
+    backgroundColor: '#F44336',
   },
   viewButton: {
     backgroundColor: '#666',
   },
   actionButtonText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     marginLeft: 4,
   },
@@ -759,29 +871,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 10,
     fontSize: 16,
     color: '#666',
+    marginTop: 8,
   },
-  // Modal Styles
-  modalContainer: {
+  emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 12,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  modalContainer: {
+    flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   modalContent: {
-    width: '90%',
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 20,
-    maxHeight: '80%',
+    width: '100%',
+    maxWidth: 400,
+    padding: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
@@ -789,52 +919,49 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   modalBody: {
-    marginBottom: 20,
+    maxHeight: 400,
+    alignItems: 'center',
+    paddingVertical: 20,
   },
   label: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#555',
+    color: '#333',
     marginBottom: 8,
-    marginTop: 10,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#e0e0e0',
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 16,
   },
   saveButton: {
-    backgroundColor: '#2196F3',
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
   },
   saveButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
-  },
-  // New styles for the view details modal
-  detailItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  detailLabel: {
-    fontSize: 16,
     fontWeight: '600',
-    color: '#555',
   },
-  detailValue: {
-    fontSize: 16,
+  confirmIcon: {
+    marginBottom: 16,
+  },
+  confirmText: {
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#333',
-    textAlign: 'right',
-    flexShrink: 1,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subConfirmText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });
