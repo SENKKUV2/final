@@ -70,6 +70,8 @@ type Booking = {
   contact_email?: string;
   number_of_people: number;
   special_requests?: string;
+  profiles?: { full_name?: string; email?: string };
+  tours?: { title?: string; type?: string };
 };
 
 export default function ReportsScreen() {
@@ -113,7 +115,7 @@ export default function ReportsScreen() {
         supabase.from('bookings').select('id,total_price,created_at,booking_date').eq('status', 'completed'),
         supabase.from('bookings').select('status'),
         supabase.from('tours').select('id,available,type,location'),
-        supabase.from('profiles').select('id').ilike('role', 'user')
+        supabase.from('profiles').select('id').eq('role', 'user') // Fixed: .ilike -> .eq assuming exact match
       ]);
 
       if (completedBookingsError) throw new Error(`Failed to fetch completed bookings: ${completedBookingsError.message}`);
@@ -123,6 +125,7 @@ export default function ReportsScreen() {
 
       const activeCustomers = users?.length || 0;
       const totalBookings = completedBookings?.length || 0;
+      // Calculate total revenue from completed bookings
       const totalRevenue = completedBookings?.reduce((sum, b) => sum + (b.total_price || 0), 0) || 0;
       const upcomingTours = toursData?.filter(t => t.available).length || 0;
 
@@ -130,6 +133,7 @@ export default function ReportsScreen() {
       const monthlyRevenue = Array(6).fill(0);
       const now = new Date();
       
+      // Aggregate monthly revenue and bookings from completed bookings
       completedBookings?.forEach(b => {
         const diff = (now.getFullYear() - new Date(b.created_at).getFullYear()) * 12 + (now.getMonth() - new Date(b.created_at).getMonth());
         if (diff >= 0 && diff < 6) {
@@ -177,9 +181,8 @@ export default function ReportsScreen() {
         topLocations
       });
     } catch (error: any) {
-  console.error(error.message);
-  }
-
+      console.error(error.message);
+    }
   };
 
   const calculateTrend = (current: number, previous: number) => 
@@ -212,8 +215,7 @@ export default function ReportsScreen() {
   const fetchBookings = async () => {
     const { data, error } = await supabase
       .from('bookings')
-      .select(
-        `
+      .select(`
         id,
         total_price,
         booking_date,
@@ -224,14 +226,13 @@ export default function ReportsScreen() {
         special_requests,
         profiles(full_name,email),
         tours!bookings_tour_id_fkey(title,type)
-      `
-      )
+      `)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
     setBookings(
-      data?.map((b) => ({
+      data?.map((b: any) => ({
         id: b.id,
         customer: b.profiles?.full_name || b.profiles?.email || 'Unknown',
         date: b.booking_date,
@@ -242,6 +243,8 @@ export default function ReportsScreen() {
         contact_email: b.contact_email,
         number_of_people: b.number_of_people,
         special_requests: b.special_requests,
+        profiles: b.profiles,
+        tours: b.tours,
       })) || []
     );
   };
@@ -294,9 +297,9 @@ export default function ReportsScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Success', `Report downloaded as ${filename}`);
       } else {
-        const fileUri = `${FileSystem.documentDirectory}${filename}`;
+        const fileUri = `${(FileSystem as any).documentDirectory}${filename}`;
         await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-          encoding: FileSystem.EncodingType.UTF8,
+          encoding: (FileSystem as any).EncodingType.UTF8,
         });
 
         if (await Sharing.isAvailableAsync()) {
@@ -417,7 +420,7 @@ export default function ReportsScreen() {
               </View>
               <View style={styles.kpiContent}>
                 <Text style={styles.kpiValue}>₱{(stats?.totalRevenue || 0).toLocaleString()}</Text>
-                <Text style={styles.kpiLabel}>Total Revenue</Text>
+                <Text style={styles.kpiLabel}>Total Revenue (Completed Bookings)</Text>
                 <View style={styles.trendContainer}>
                   <MaterialIcons 
                     name={stats?.revenueTrend?.startsWith('+') ? 'arrow-upward' : 'arrow-downward'} 
@@ -439,7 +442,7 @@ export default function ReportsScreen() {
               </View>
               <View style={styles.kpiContent}>
                 <Text style={styles.kpiValue}>{stats?.totalBookings || 0}</Text>
-                <Text style={styles.kpiLabel}>Total Bookings</Text>
+                <Text style={styles.kpiLabel}>Total Bookings (Completed)</Text>
                 <View style={styles.trendContainer}>
                   <MaterialIcons 
                     name={stats?.bookingsTrend?.startsWith('+') ? 'arrow-upward' : 'arrow-downward'} 
@@ -483,7 +486,7 @@ export default function ReportsScreen() {
         <View style={styles.chartSection}>
           <View style={styles.chartHeader}>
             <Text style={styles.chartTitle}>Revenue Performance</Text>
-            <Text style={styles.chartSubtitle}>Monthly revenue tracking</Text>
+            <Text style={styles.chartSubtitle}>Monthly revenue from completed bookings</Text>
           </View>
           <View style={styles.chartContainer}>
             <LineChart
@@ -504,7 +507,7 @@ export default function ReportsScreen() {
         <View style={styles.chartSection}>
           <View style={styles.chartHeader}>
             <Text style={styles.chartTitle}>Booking Trends</Text>
-            <Text style={styles.chartSubtitle}>Monthly booking volume</Text>
+            <Text style={styles.chartSubtitle}>Monthly completed bookings</Text>
           </View>
           <View style={styles.chartContainer}>
             <BarChart
@@ -514,6 +517,8 @@ export default function ReportsScreen() {
               chartConfig={chartConfig}
               style={styles.chart}
               showValuesOnTopOfBars
+              yAxisLabel=""
+              yAxisSuffix=""
             />
           </View>
         </View>
@@ -606,6 +611,7 @@ export default function ReportsScreen() {
             </View>
           </View>
         </View>
+
         {/* Export Button */}
         <View style={styles.exportSection}>
           <TouchableOpacity style={styles.exportButton} onPress={exportToExcel} disabled={exporting}>
@@ -958,6 +964,10 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontWeight: '500',
     textAlign: 'center',
+  },
+  exportSection: {
+    marginHorizontal: 20,
+    marginBottom: 24,
   },
   bottomSpacer: {
     height: 40,

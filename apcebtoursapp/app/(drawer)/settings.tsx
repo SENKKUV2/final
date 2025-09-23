@@ -1,8 +1,8 @@
 "use client"
 
-import { MaterialIcons } from "@expo/vector-icons"
-import type React from "react"
-import { useState } from "react"
+import { MaterialIcons } from "@expo/vector-icons";
+import type React from "react";
+import { useState } from "react";
 import {
   Alert,
   SafeAreaView,
@@ -13,97 +13,107 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native"
+} from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { supabase } from "@/lib/supabase";
 
-// ✅ Import your real Supabase client
-import { supabase } from "@/lib/supabase"
+// Define navigation stack param list
+type RootStackParamList = {
+  welcome: undefined;
+  settings: undefined;
+};
+
+// Define navigation prop type
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface SettingsSectionProps {
-  title: string
-  children: React.ReactNode
+  title: string;
+  children: React.ReactNode;
 }
 
 interface SettingsItemProps {
-  icon: keyof typeof MaterialIcons.glyphMap
-  title: string
-  onPress?: () => void
-  rightComponent?: React.ReactNode
-  showArrow?: boolean
+  icon: keyof typeof MaterialIcons.glyphMap;
+  title: string;
+  onPress?: () => void;
+  rightComponent?: React.ReactNode;
+  showArrow?: boolean;
 }
 
 const AdminSettingsScreen: React.FC = () => {
-  const [showEmailUpdate, setShowEmailUpdate] = useState<boolean>(false)
-  const [newEmail, setNewEmail] = useState<string>("")
-  const [showPasswordChange, setShowPasswordChange] = useState<boolean>(false)
-  const [newPassword, setNewPassword] = useState<string>("")
-  const [isUpdating, setIsUpdating] = useState<boolean>(false)
+  const navigation = useNavigation<NavigationProp>();
+  const [showEmailUpdate, setShowEmailUpdate] = useState<boolean>(false);
+  const [newEmail, setNewEmail] = useState<string>("");
+  const [showPasswordChange, setShowPasswordChange] = useState<boolean>(false);
+  const [newPassword, setNewPassword] = useState<string>("");
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
 
   const showAlert = (title: string, message = "Feature coming soon!"): void => {
-    Alert.alert(title, message)
-  }
+    Alert.alert(title, message);
+  };
 
   const handleSignOut = async () => {
-  Alert.alert("Logout", "Are you sure you want to log out?", [
-    { text: "Cancel", style: "cancel" },
-    {
-      text: "Logout",
-      onPress: async () => {
-        try {
-          const { error } = await supabase.auth.signOut()
-          if (error) throw error
+    Alert.alert("Logout", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        onPress: async () => {
+          try {
+            const { error } = await supabase.auth.signOut();
+            if (error) throw error;
 
-          Alert.alert("Success", "You have been logged out.")
-          router.replace("/welcome") // 👈 send to login (AdminLoginScreen)
-        } catch (error: any) {
-          Alert.alert("Logout Failed", error.message)
-        }
+            Alert.alert("Success", "You have been logged out.");
+            navigation.replace("welcome"); // 👈 Updated to use navigation
+          } catch (error: any) {
+            Alert.alert("Logout Failed", error.message);
+          }
+        },
+        style: "destructive",
       },
-      style: "destructive",
-    },
-  ])
-}
+    ]);
+  };
+
   const handleChangePassword = async () => {
     if (!newPassword) {
-      Alert.alert("Error", "Please enter a new password.")
-      return
+      Alert.alert("Error", "Please enter a new password.");
+      return;
     }
 
-    setIsUpdating(true)
+    setIsUpdating(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword })
-      if (error) throw error
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
 
-      Alert.alert("Success", "Your password has been changed successfully.")
-      setShowPasswordChange(false)
-      setNewPassword("")
+      Alert.alert("Success", "Your password has been changed successfully.");
+      setShowPasswordChange(false);
+      setNewPassword("");
     } catch (error: any) {
-      Alert.alert("Error", `Failed to change password: ${error.message}`)
+      Alert.alert("Error", `Failed to change password: ${error.message}`);
     } finally {
-      setIsUpdating(false)
+      setIsUpdating(false);
     }
-  }
+  };
 
- const handleUpdateEmail = async () => {
-  if (!newEmail) return
-  setIsUpdating(true)
-  try {
-    const { error } = await supabase.auth.updateUser({ email: newEmail })
-    if (error) throw error
-    Alert.alert("Success", "Check your new email for confirmation link")
-  } catch (err: any) {
-    Alert.alert("Error", err.message)
-  } finally {
-    setIsUpdating(false)
-  }
-}
-
+  const handleUpdateEmail = async () => {
+    if (!newEmail) return;
+    setIsUpdating(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail });
+      if (error) throw error;
+      Alert.alert("Success", "Check your new email for confirmation link");
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const SettingsSection: React.FC<SettingsSectionProps> = ({ title, children }) => (
     <View style={styles.section}>
       <Text style={styles.sectionHeader}>{title}</Text>
       <View style={styles.sectionContent}>{children}</View>
     </View>
-  )
+  );
 
   const SettingsItem: React.FC<SettingsItemProps> = ({
     icon,
@@ -127,7 +137,7 @@ const AdminSettingsScreen: React.FC = () => {
         {showArrow && <MaterialIcons name="chevron-right" size={24} color="#ccc" />}
       </View>
     </TouchableOpacity>
-  )
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -141,7 +151,7 @@ const AdminSettingsScreen: React.FC = () => {
         <SettingsSection title="">
           <SettingsItem icon="lock" title="Change Password" onPress={() => setShowPasswordChange(true)} />
           <SettingsItem icon="email" title="Update Email" onPress={() => setShowEmailUpdate(true)} />
-             <SettingsItem
+          <SettingsItem
             icon="info"
             title="App Version"
             rightComponent={<Text style={styles.versionText}>v1.0.0</Text>}
@@ -191,15 +201,11 @@ const AdminSettingsScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
         )}
-
-
-      
       </ScrollView>
     </SafeAreaView>
-  )
-}
+  );
+};
 
-// ✅ Styles remain the same (no changes)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8f9fa" },
   header: {
@@ -293,6 +299,6 @@ const styles = StyleSheet.create({
   formButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   cancelButton: { marginTop: 8, alignItems: "center" },
   cancelButtonText: { color: "#6c757d", fontSize: 14 },
-})
+});
 
-export default AdminSettingsScreen
+export default AdminSettingsScreen;

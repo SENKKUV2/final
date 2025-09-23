@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, FlatList } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, FlatList, type KeyboardTypeOptions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
 interface Tour {
@@ -35,6 +35,10 @@ export default function ManageToursScreen() {
   const [searchQuery, setSearchQuery] = useState(decodeURIComponent((search as string) || ''));
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [modalVisible, setModalVisible] = useState(false);
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [tourToDelete, setTourToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
   const [editingTour, setEditingTour] = useState<Tour | null>(null);
   const [formData, setFormData] = useState<TourFormData>({
     title: '',
@@ -85,7 +89,7 @@ export default function ManageToursScreen() {
         const tour = await fetchTourById(tourId);
         if (tour) {
           setSearchQuery(tour.title);
-          setActiveTab('all'); // Reset tab to show all tours with the search query
+          setActiveTab('all');
         }
       } else if (search) {
         setSearchQuery(decodeURIComponent(search as string));
@@ -123,42 +127,31 @@ export default function ManageToursScreen() {
     setEditingTour(null);
   };
 
-  const showSuccessAlert = (type: 'created' | 'updated' | 'deleted', title: string) =>
-    Alert.alert(
-      type === 'created' ? 'Tour Created' : type === 'updated' ? 'Tour Updated' : 'Tour Deleted',
-      type === 'deleted' ? `"${title}" and its bookings have been backed up and deleted.` : `"${title}" has been successfully ${type}.`,
-      [{ text: 'OK' }]
-    );
+  const showSuccessAlert = (type: 'created' | 'updated' | 'deleted', title: string) => {
+    setSuccessMessage(`"${title}" has been successfully ${type}.`);
+    setSuccessModalVisible(true);
+  };
 
-  const handleDeleteTour = async (tourId: string, tourTitle: string) => {
-    Alert.alert('Delete Tour', `Are you sure you want to delete "${tourTitle}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          setLoading(true);
-          try {
-            const { data: bookings, error: fetchError } = await supabase.from('bookings').select('*').eq('tour_id', tourId);
-            if (fetchError) throw new Error('Failed to fetch bookings');
-            if (bookings?.length) {
-              const { error: backupError } = await supabase.from('bookings_backup').insert(bookings);
-              if (backupError) throw new Error('Failed to backup bookings');
-            }
-            const { error: bookingsError } = await supabase.from('bookings').delete().eq('tour_id', tourId);
-            if (bookingsError) throw new Error('Failed to delete bookings');
-            const { error: tourError } = await supabase.from('tours').delete().eq('id', tourId);
-            if (tourError) throw new Error('Failed to delete tour');
-            setTours((tours) => tours.filter((t) => t.id !== tourId));
-            showSuccessAlert('deleted', tourTitle);
-          } catch (error: any) {
-            Alert.alert('Error', error.message || 'Failed to delete tour.');
-          } finally {
-            setLoading(false);
-          }
-        },
-      },
-    ]);
+  const handleDeleteTour = (tourId: string, tourTitle: string) => {
+    setTourToDelete({ id: tourId, title: tourTitle });
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDeleteTour = async () => {
+    if (!tourToDelete) return;
+    setLoading(true);
+    setDeleteModalVisible(false);
+    try {
+      const { error: tourError } = await supabase.from('tours').delete().eq('id', tourToDelete.id);
+      if (tourError) throw new Error('Failed to delete tour');
+      setTours((tours) => tours.filter((t) => t.id !== tourToDelete.id));
+      showSuccessAlert('deleted', tourToDelete.title);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to delete tour.');
+    } finally {
+      setLoading(false);
+      setTourToDelete(null);
+    }
   };
 
   const handleEditTour = (tour: Tour) => {
@@ -279,32 +272,34 @@ export default function ManageToursScreen() {
     }
   };
 
-  const renderTourItem = (tour: Tour) => (
-    <View style={s.tourCard}>
-      <Image source={{ uri: tour.image }} style={s.tourImage} />
-      {tour.sub_images?.length && (
+  const renderTourItem = ({ item: tour }: { item: Tour }) => (
+    <View key={tour.id} style={s.tourCard}>
+      <Image source={{ uri: tour.image || 'https://via.placeholder.com/200' }} style={s.tourImage} />
+      {tour.sub_images?.length ? (
         <View style={s.subImagesContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.subImagesScroll}>
             {tour.sub_images.slice(0, 4).map((img, i) => (
-              <Image key={i} source={{ uri: img }} style={s.subImage} />
+              <Image key={i} source={{ uri: img || 'https://via.placeholder.com/60x45' }} style={s.subImage} />
             ))}
             {tour.sub_images.length > 4 && (
               <View style={s.moreImagesIndicator}>
-                <Text style={s.moreImagesText}>{`+${tour.sub_images.length - 4}`}</Text>
+                <Text style={s.moreImagesText}>+{tour.sub_images.length - 4}</Text>
               </View>
             )}
           </ScrollView>
         </View>
-      )}
+      ) : null}
       <View style={s.tourInfo}>
-        <Text style={s.tourTitle}>{tour.title}</Text>
-        <Text style={s.tourLocation}>{`📍 ${tour.location}`}</Text>
+        <Text style={s.tourTitle}>{tour.title || 'Unnamed Tour'}</Text>
+        <Text style={s.tourLocation}>📍 {tour.location || 'Unknown Location'}</Text>
         <View style={s.tourDetails}>
-          <Text style={s.tourPrice}>{`₱${tour.price.toLocaleString()}`}</Text>
+          <Text style={s.tourPrice}>₱{typeof tour.price === 'number' ? tour.price.toLocaleString() : '0'}</Text>
           <View style={s.tourMeta}>
-            <Text style={s.tourDuration}>{tour.duration}</Text>
+            <Text style={s.tourDuration}>{tour.duration || 'Unknown Duration'}</Text>
             <View style={[s.typeTag, tour.type === 'combo' && s.comboTag]}>
-              <Text style={[s.typeText, tour.type === 'combo' && s.comboText]}>{tour.type.toUpperCase()}</Text>
+              <Text style={[s.typeText, tour.type === 'combo' && s.comboText]}>
+                {(tour.type || 'regular').toUpperCase()}
+              </Text>
             </View>
           </View>
         </View>
@@ -313,7 +308,7 @@ export default function ManageToursScreen() {
         <TouchableOpacity style={[s.actionButton, s.editButton]} onPress={() => handleEditTour(tour)}>
           <Text style={s.editButtonText}>Edit</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[s.actionButton, s.deleteButton]} onPress={() => handleDeleteTour(tour.id, tour.title)} disabled={loading}>
+        <TouchableOpacity style={[s.actionButton, s.deleteButton]} onPress={() => handleDeleteTour(tour.id, tour.title || 'Unnamed Tour')} disabled={loading}>
           {loading ? <ActivityIndicator size="small" color="#D32F2F" /> : <Text style={s.deleteButtonText}>Delete</Text>}
         </TouchableOpacity>
       </View>
@@ -321,152 +316,212 @@ export default function ManageToursScreen() {
   );
 
   const renderModal = () => {
-    const fields = [
+    const fields: {
+      label: string;
+      key: keyof Pick<TourFormData, 'title' | 'price' | 'duration' | 'location'>;
+      placeholder: string;
+      keyboardType?: KeyboardTypeOptions;
+    }[] = [
       { label: 'Tour Title', key: 'title', placeholder: 'Enter tour title' },
       { label: 'Price (₱)', key: 'price', placeholder: 'Enter price', keyboardType: 'numeric' },
       { label: 'Duration', key: 'duration', placeholder: 'e.g., Half Day, Full Day' },
       { label: 'Location', key: 'location', placeholder: 'Enter tour location' },
     ];
+
     return (
-      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
-        <View style={s.modalContainer}>
-          <View style={s.modalContent}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={s.modalHeader}>
-                <Text style={s.modalTitle}>{editingTour ? 'Edit Tour' : 'Add New Tour'}</Text>
-                <TouchableOpacity style={s.closeButton} onPress={() => setModalVisible(false)}>
-                  <Text style={s.closeButtonText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              {fields.map(({ label, key, placeholder, keyboardType }) => (
-                <View key={key} style={s.formGroup}>
-                  <Text style={s.label}>{label}</Text>
-                  <TextInput
-                    style={s.input}
-                    placeholder={placeholder}
-                    value={formData[key]}
-                    onChangeText={(text) => setFormData({ ...formData, [key]: text })}
-                    keyboardType={keyboardType}
-                  />
-                </View>
-              ))}
-              <View style={s.formGroup}>
-                <Text style={s.label}>Tour Type</Text>
-                <View style={s.typeSelector}>
-                  {['regular', 'combo'].map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[s.typeOption, formData.type === type && s.activeTypeOption]}
-                      onPress={() => setFormData({ ...formData, type })}
-                    >
-                      <Text style={[s.typeOptionText, formData.type === type && s.activeTypeOptionText]}>
-                        {type.charAt(0).toUpperCase() + type.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-              <View style={s.formGroup}>
-                <Text style={s.label}>Main Tour Image</Text>
-                <TouchableOpacity style={s.imageUpload} onPress={() => pickImage(true)} disabled={imageUploading}>
-                  {imageUploading ? (
-                    <ActivityIndicator size="large" color="#2E7D32" />
-                  ) : formData.image ? (
-                    <>
-                      <Image source={{ uri: formData.image }} style={s.previewImage} />
-                      <Text style={s.changeImageText}>Tap to change image</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Text style={s.uploadText}>📷</Text>
-                      <Text style={s.uploadSubText}>Tap to upload main image</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-              <View style={s.formGroup}>
-                <Text style={s.label}>Additional Images (Optional, up to 5)</Text>
-                {formData.sub_images.length > 0 && (
-                  <FlatList
-                    data={formData.sub_images}
-                    renderItem={({ item, index }) => (
-                      <View style={s.subImageItem}>
-                        <Image source={{ uri: item }} style={s.subImagePreview} />
-                        <TouchableOpacity
-                          style={s.removeSubImageButton}
-                          onPress={() => setFormData({ ...formData, sub_images: formData.sub_images.filter((_, i) => i !== index) })}
-                        >
-                          <Text style={s.removeSubImageText}>×</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                    keyExtractor={(item, i) => `${item}_${i}`}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={s.subImagesList}
-                    contentContainerStyle={s.subImagesListContent}
-                  />
-                )}
-                {formData.sub_images.length < 5 && (
-                  <TouchableOpacity style={s.addSubImageButton} onPress={() => pickImage(false)} disabled={imageUploading}>
-                    {imageUploading ? (
-                      <ActivityIndicator size="small" color="#2E7D32" />
-                    ) : (
-                      <>
-                        <Text style={s.addSubImageIcon}>+</Text>
-                        <Text style={s.addSubImageText}>{`Add Images (${formData.sub_images.length}/5)`}</Text>
-                      </>
-                    )}
+      <>
+        {/* Form Modal */}
+        <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
+          <View style={s.modalContainer}>
+            <View style={s.modalContent}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={s.modalHeader}>
+                  <Text style={s.modalTitle}>{editingTour ? 'Edit Tour' : 'Add New Tour'}</Text>
+                  <TouchableOpacity style={s.closeButton} onPress={() => setModalVisible(false)}>
+                    <Text style={s.closeButtonText}>✕</Text>
                   </TouchableOpacity>
-                )}
-              </View>
-              <View style={s.formGroup}>
-                <Text style={s.label}>Tour Features</Text>
-                {formData.features.length > 0 ? (
-                  <View style={s.featureSelector}>
-                    {formData.features.map((feature, index) => (
+                </View>
+                {fields.map(({ label, key, placeholder, keyboardType }) => (
+                  <View key={key} style={s.formGroup}>
+                    <Text style={s.label}>{label}</Text>
+                    <TextInput
+                      style={s.input}
+                      placeholder={placeholder}
+                      value={formData[key]}
+                      onChangeText={(text) => setFormData({ ...formData, [key]: text })}
+                      keyboardType={keyboardType}
+                    />
+                  </View>
+                ))}
+                <View style={s.formGroup}>
+                  <Text style={s.label}>Tour Type</Text>
+                  <View style={s.typeSelector}>
+                    {(['regular', 'combo'] as const).map((type) => (
                       <TouchableOpacity
-                        key={`${feature.text}_${index}`}
-                        style={[s.featureOption, feature.available && s.activeFeatureOption]}
-                        onPress={() => handleToggleFeature(index)}
+                        key={type}
+                        style={[s.typeOption, formData.type === type && s.activeTypeOption]}
+                        onPress={() => setFormData({ ...formData, type })}
                       >
-                        <Text style={[s.featureOptionText, feature.available && s.activeFeatureOptionText]}>
-                          {feature.text}
+                        <Text style={[s.typeOptionText, formData.type === type && s.activeTypeOptionText]}>
+                          {type.charAt(0).toUpperCase() + type.slice(1)}
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                ) : (
-                  <Text style={s.noFeaturesText}>No features added yet.</Text>
-                )}
-                <View style={s.addFeatureContainer}>
-                  <TextInput
-                    style={[s.input, s.addFeatureInput]}
-                    placeholder="Enter new feature"
-                    value={newFeatureText}
-                    onChangeText={setNewFeatureText}
-                  />
-                  <TouchableOpacity style={s.addFeatureButton} onPress={handleAddFeature}>
-                    <Text style={s.addFeatureButtonText}>Add</Text>
+                </View>
+                <View style={s.formGroup}>
+                  <Text style={s.label}>Main Tour Image</Text>
+                  <TouchableOpacity style={s.imageUpload} onPress={() => pickImage(true)} disabled={imageUploading}>
+                    {imageUploading ? (
+                      <ActivityIndicator size="large" color="#2E7D32" />
+                    ) : formData.image ? (
+                      <>
+                        <Image source={{ uri: formData.image }} style={s.previewImage} />
+                        <Text style={s.changeImageText}>Tap to change image</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={s.uploadText}>📷</Text>
+                        <Text style={s.uploadSubText}>Tap to upload main image</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
-              </View>
+                <View style={s.formGroup}>
+                  <Text style={s.label}>Additional Images (Optional, up to 5)</Text>
+                  {formData.sub_images.length > 0 && (
+                    <FlatList
+                      data={formData.sub_images}
+                      renderItem={({ item, index }) => (
+                        <View style={s.subImageItem}>
+                          <Image source={{ uri: item }} style={s.subImagePreview} />
+                          <TouchableOpacity
+                            style={s.removeSubImageButton}
+                            onPress={() => setFormData({ ...formData, sub_images: formData.sub_images.filter((_, i) => i !== index) })}
+                          >
+                            <Text style={s.removeSubImageText}>×</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      keyExtractor={(item, i) => `${item}_${i}`}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={s.subImagesList}
+                      contentContainerStyle={s.subImagesListContent}
+                    />
+                  )}
+                  {formData.sub_images.length < 5 && (
+                    <TouchableOpacity style={s.addSubImageButton} onPress={() => pickImage(false)} disabled={imageUploading}>
+                      {imageUploading ? (
+                        <ActivityIndicator size="small" color="#2E7D32" />
+                      ) : (
+                        <>
+                          <Text style={s.addSubImageIcon}>+</Text>
+                          <Text style={s.addSubImageText}>{`Add Images (${formData.sub_images.length}/5)`}</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={s.formGroup}>
+                  <Text style={s.label}>Tour Features</Text>
+                  {formData.features.length > 0 ? (
+                    <View style={s.featureSelector}>
+                      {formData.features.map((feature, index) => (
+                        <TouchableOpacity
+                          key={`${feature.text}_${index}`}
+                          style={[s.featureOption, feature.available && s.activeFeatureOption]}
+                          onPress={() => handleToggleFeature(index)}
+                        >
+                          <Text style={[s.featureOptionText, feature.available && s.activeFeatureOptionText]}>
+                            {feature.text}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={s.noFeaturesText}>No features added yet.</Text>
+                  )}
+                  <View style={s.addFeatureContainer}>
+                    <TextInput
+                      style={[s.input, s.addFeatureInput]}
+                      placeholder="Enter new feature"
+                      value={newFeatureText}
+                      onChangeText={setNewFeatureText}
+                    />
+                    <TouchableOpacity style={s.addFeatureButton} onPress={handleAddFeature}>
+                      <Text style={s.addFeatureButtonText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={s.modalActions}>
+                  <TouchableOpacity style={[s.modalButton, s.cancelButton]} onPress={() => setModalVisible(false)}>
+                    <Text style={s.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.modalButton, s.saveButton]} onPress={handleSaveTour} disabled={formLoading}>
+                    {formLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={s.saveButtonText}>{editingTour ? 'Update Tour' : 'Create Tour'}</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+        {/* Success Modal */}
+        <Modal animationType="fade" transparent visible={successModalVisible} onRequestClose={() => setSuccessModalVisible(false)}>
+          <View style={s.modalContainer}>
+            <View style={s.successModalContent}>
+              <Text style={s.successModalTitle}>Success</Text>
+              <Text style={s.successModalMessage}>{successMessage}</Text>
+              <TouchableOpacity
+                style={s.confirmButton}
+                onPress={() => setSuccessModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={s.confirmButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+        {/* Delete Confirmation Modal */}
+        <Modal animationType="fade" transparent visible={deleteModalVisible} onRequestClose={() => setDeleteModalVisible(false)}>
+          <View style={s.modalContainer}>
+            <View style={s.successModalContent}>
+              <Text style={s.successModalTitle}>Delete Tour</Text>
+              <Text style={s.successModalMessage}>
+                Are you sure you want to delete "{tourToDelete?.title || 'this tour'}"?
+              </Text>
               <View style={s.modalActions}>
-                <TouchableOpacity style={[s.modalButton, s.cancelButton]} onPress={() => setModalVisible(false)}>
+                <TouchableOpacity
+                  style={[s.modalButton, s.cancelButton]}
+                  onPress={() => {
+                    setDeleteModalVisible(false);
+                    setTourToDelete(null);
+                  }}
+                  activeOpacity={0.7}
+                >
                   <Text style={s.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.modalButton, s.saveButton]} onPress={handleSaveTour} disabled={formLoading}>
-                  {formLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                <TouchableOpacity
+                  style={[s.modalButton, s.deleteButton]}
+                  onPress={confirmDeleteTour}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color="#D32F2F" />
                   ) : (
-                    <Text style={s.saveButtonText}>{editingTour ? 'Update Tour' : 'Create Tour'}</Text>
+                    <Text style={s.deleteButtonText}>Delete</Text>
                   )}
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </>
     );
   };
 
@@ -509,16 +564,19 @@ export default function ManageToursScreen() {
           ))}
         </View>
       </View>
-      <ScrollView style={s.scrollView} showsVerticalScrollIndicator={false}>
-        {loading ? (
-          <ActivityIndicator size="large" color="#2E7D32" style={{ marginTop: 50 }} />
-        ) : filteredTours.length ? (
-          <View style={s.toursList}>{filteredTours.map(renderTourItem)}</View>
-        ) : (
-          <Text style={s.noToursText}>No tours found.</Text>
-        )}
-        <View style={s.bottomSpacer} />
-      </ScrollView>
+      {loading ? (
+        <ActivityIndicator size="large" color="#2E7D32" style={{ marginTop: 50 }} />
+      ) : (
+        <FlatList
+          data={filteredTours}
+          renderItem={renderTourItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={s.toursList}
+          ListEmptyComponent={<Text style={s.noToursText}>No tours found.</Text>}
+          showsVerticalScrollIndicator={false}
+          ListFooterComponent={<View style={s.bottomSpacer} />}
+        />
+      )}
       <TouchableOpacity
         style={s.fab}
         onPress={() => {
@@ -538,7 +596,6 @@ const s = StyleSheet.create({
   header: { padding: 20, paddingBottom: 10 },
   title: { fontSize: 26, fontWeight: 'bold', marginBottom: 10, color: '#333' },
   description: { fontSize: 16, color: '#666', lineHeight: 22 },
-  scrollView: { flex: 1 },
   toursList: { paddingHorizontal: 20 },
   tourCard: {
     backgroundColor: '#fff',
@@ -655,6 +712,13 @@ const s = StyleSheet.create({
   noToursText: { textAlign: 'center', marginTop: 20, fontSize: 16, color: '#666' },
   modalContainer: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { backgroundColor: '#fff', borderRadius: 16, width: '90%', maxHeight: '80%' },
+  successModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    width: '80%',
+    padding: 20,
+    alignItems: 'center',
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -664,6 +728,18 @@ const s = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  successModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+  },
+  successModalMessage: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
   closeButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   closeButtonText: { fontSize: 24, color: '#666' },
   formGroup: { paddingHorizontal: 20, marginBottom: 20 },
@@ -747,4 +823,24 @@ const s = StyleSheet.create({
   cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#666' },
   saveButton: { backgroundColor: '#2E7D32' },
   saveButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  confirmButton: {
+    backgroundColor: '#388E3C',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#1B5E20',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    width: '60%',
+  },
+  confirmButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
 });
