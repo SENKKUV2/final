@@ -4,12 +4,13 @@ import { supabase } from "./lib/supabase";
 import Navbar from "./Navbar";
 import { useAuth } from "./AuthContext";
 import Chatbot from "./AI/Chatbot";
-import { FaRobot } from "react-icons/fa";
+import { FaRobot, FaStar } from "react-icons/fa";
 
 function Profile() {
   const { user, setUser } = useAuth();
   const [profile, setProfile] = useState(null);
   const [bookings, setBookings] = useState([]);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(new Set());
   const [loadingUser, setLoadingUser] = useState(true);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingBookings, setLoadingBookings] = useState(true);
@@ -24,7 +25,14 @@ function Profile() {
     phone: '',
     avatar_url: ''
   });
+  const [passwordData, setPasswordData] = useState({
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordError, setPasswordError] = useState('');
   const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
   const [requestingCancel, setRequestingCancel] = useState(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -33,6 +41,12 @@ function Profile() {
   const [errorMessage, setErrorMessage] = useState('');
   const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
   const [cancelRequestBookingId, setCancelRequestBookingId] = useState(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackBookingId, setFeedbackBookingId] = useState(null);
+  const [feedbackData, setFeedbackData] = useState({
+    rating: 0,
+    comments: ''
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -67,6 +81,7 @@ function Profile() {
     if (user) {
       fetchProfile(user.id);
       fetchBookings();
+      fetchFeedbackStatus();
     } else {
       window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }));
     }
@@ -128,6 +143,22 @@ function Profile() {
     }
   };
 
+  const fetchFeedbackStatus = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('feedback')
+        .select('booking_id')
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+      const submittedBookingIds = new Set(data.map(f => f.booking_id));
+      setFeedbackSubmitted(submittedBookingIds);
+    } catch (err) {
+      setErrorMessage("Error fetching feedback status: " + err.message);
+      setShowErrorModal(true);
+    }
+  };
+
   const handleLogoutClick = () => {
     setShowLogoutModal(true);
   };
@@ -178,6 +209,58 @@ function Profile() {
     }
   };
 
+  const handlePasswordChange = async () => {
+    setPasswordError('');
+    
+    if (!passwordData.oldPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setPasswordError("All password fields are required");
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError("New password and confirmation do not match");
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      setPasswordError("New password must be at least 6 characters long");
+      return;
+    }
+
+    try {
+      setUpdatingPassword(true);
+      
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: passwordData.oldPassword
+      });
+
+      if (signInError) {
+        throw new Error("Incorrect old password");
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: passwordData.newPassword
+      });
+
+      if (updateError) throw updateError;
+
+      setSuccessMessage("Password updated successfully!");
+      setShowSuccessModal(true);
+      setPasswordData({
+        oldPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setIsEditingProfile(false);
+    } catch (err) {
+      setPasswordError(err.message || "Error updating password");
+      setShowErrorModal(true);
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
   const handleCancelRequestClick = (bookingId) => {
     setCancelRequestBookingId(bookingId);
     setShowCancelRequestModal(true);
@@ -186,9 +269,6 @@ function Profile() {
   const handleCancelRequest = async (bookingId) => {
     try {
       setRequestingCancel(bookingId);
-      console.log("Attempting to cancel booking ID:", bookingId);
-
-      // Verify booking exists and user is authorized
       const { data: booking, error: fetchError } = await supabase
         .from("bookings")
         .select("id, user_id, status")
@@ -196,7 +276,6 @@ function Profile() {
         .single();
 
       if (fetchError || !booking) {
-        console.error("Booking fetch error:", fetchError);
         throw new Error("Booking not found or inaccessible");
       }
 
@@ -215,10 +294,7 @@ function Profile() {
         })
         .eq("id", bookingId);
 
-      if (error) {
-        console.error("Supabase update error:", error);
-        throw new Error(`Failed to update booking: ${error.message}`);
-      }
+      if (error) throw error;
 
       setSuccessMessage("Cancellation request submitted successfully");
       setShowSuccessModal(true);
@@ -227,9 +303,66 @@ function Profile() {
     } catch (err) {
       setErrorMessage(`Error submitting cancellation request: ${err.message}`);
       setShowErrorModal(true);
-      console.error("Cancellation error:", err);
     } finally {
       setRequestingCancel(null);
+    }
+  };
+
+  const handleFeedbackClick = (bookingId) => {
+    setFeedbackBookingId(bookingId);
+    setFeedbackData({ rating: 0, comments: '' });
+    setShowFeedbackModal(true);
+  };
+
+  const handleFeedbackSubmit = async () => {
+    if (feedbackData.rating === 0) {
+      setErrorMessage("Please provide a rating");
+      setShowErrorModal(true);
+      return;
+    }
+
+    try {
+      // Check if feedback already exists for this booking
+      const { data: existingFeedback, error: checkError } = await supabase
+        .from('feedback')
+        .select('id')
+        .eq('booking_id', feedbackBookingId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError;
+      }
+
+      if (existingFeedback) {
+        setErrorMessage("Feedback has already been submitted for this booking");
+        setShowErrorModal(true);
+        setShowFeedbackModal(false);
+        return;
+      }
+
+      // Insert feedback into Supabase
+      const { error } = await supabase
+        .from('feedback')
+        .insert([{
+          user_id: user.id,
+          booking_id: feedbackBookingId,
+          tour_id: bookings.find(b => b.id === feedbackBookingId)?.tour_id,
+          rating: feedbackData.rating,
+          comments: feedbackData.comments || null,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (error) throw error;
+
+      setFeedbackSubmitted(prev => new Set([...prev, feedbackBookingId]));
+      setSuccessMessage("Feedback submitted successfully!");
+      setShowSuccessModal(true);
+      setShowFeedbackModal(false);
+      setFeedbackData({ rating: 0, comments: '' });
+    } catch (err) {
+      setErrorMessage("Error submitting feedback: " + err.message);
+      setShowErrorModal(true);
     }
   };
 
@@ -247,6 +380,7 @@ function Profile() {
           status,
           special_requests,
           contact_email,
+          tour_id,
           tours ( title, duration, image, price ),
           profiles ( full_name )
         `)
@@ -277,7 +411,7 @@ function Profile() {
       case 'history':
         return bookings.filter(
           (booking) =>
-            booking.status === 'completed' || // CHANGED: Include 'completed' status
+            booking.status === 'completed' ||
             (booking.status === 'confirmed' && booking.booking_date < today)
         );
       case 'cancellations':
@@ -295,7 +429,7 @@ function Profile() {
       case 'confirmed': return 'text-green-600 bg-green-100 border-green-200';
       case 'pending': return 'text-yellow-600 bg-yellow-100 border-yellow-200';
       case 'cancel-requested': return 'text-orange-600 bg-orange-100 border-orange-200';
-      case 'cancelled': return 'text-red-600 bg-red-100 border-red-200'; // CHANGED: Ensure 'cancelled' has red styling
+      case 'cancelled': return 'text-red-600 bg-red-100 border-red-200';
       case 'completed': return 'text-blue-600 bg-blue-100 border-blue-200';
       default: return 'text-gray-600 bg-gray-100 border-gray-200';
     }
@@ -356,7 +490,7 @@ function Profile() {
       ).length,
       history: bookings.filter(
         (b) => b.status === 'completed' || (b.status === 'confirmed' && b.booking_date < today)
-      ).length, // CHANGED: Include 'completed' status
+      ).length,
       cancellations: bookings.filter(
         (b) => b.status === 'cancel-requested' || b.status === 'cancelled'
       ).length,
@@ -426,7 +560,6 @@ function Profile() {
 
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          {/* Profile Header */}
           <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
             <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
               <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-4xl font-bold overflow-hidden">
@@ -465,7 +598,6 @@ function Profile() {
             </div>
           </div>
 
-          {/* Booking Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center">
@@ -502,21 +634,20 @@ function Profile() {
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-red-100 rounded-md flex items-center justify-center"> {/* CHANGED: Red for cancellations (approved or requested) */}
+                  <div className="w-8 h-8 bg-red-100 rounded-md flex items-center justify-center">
                     <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                     </svg>
                   </div>
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Cancellations</p> {/* CHANGED: Renamed to "Cancellations" */}
+                  <p className="text-sm font-medium text-gray-500">Cancellations</p>
                   <p className="text-2xl font-semibold text-gray-900">{stats.cancellations}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Editable Profile Form */}
           {isEditingProfile && (
             <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
               <h2 className="text-2xl font-semibold text-gray-800 mb-6">Edit Profile Information</h2>
@@ -576,6 +707,41 @@ function Profile() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
+                <div className="col-span-2">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Change Password</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
+                      <input
+                        type="password"
+                        value={passwordData.oldPassword}
+                        onChange={(e) => setPasswordData({...passwordData, oldPassword: e.target.value})}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+                      <input
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
+                      <input
+                        type="password"
+                        value={passwordData.confirmPassword}
+                        onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                  {passwordError && (
+                    <p className="text-red-500 text-sm mt-2">{passwordError}</p>
+                  )}
+                </div>
               </div>
               <div className="flex gap-4 mt-6">
                 <button
@@ -583,10 +749,21 @@ function Profile() {
                   disabled={updatingProfile}
                   className="bg-green-600 text-white px-6 py-2 rounded-full hover:bg-green-700 transition duration-300 disabled:opacity-50"
                 >
-                  {updatingProfile ? 'Updating...' : 'Save Changes'}
+                  {updatingProfile ? 'Updating...' : 'Save Profile'}
                 </button>
                 <button
-                  onClick={() => setIsEditingProfile(false)}
+                  onClick={handlePasswordChange}
+                  disabled={updatingPassword}
+                  className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 transition duration-300 disabled:opacity-50"
+                >
+                  {updatingPassword ? 'Updating...' : 'Change Password'}
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditingProfile(false);
+                    setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
+                    setPasswordError('');
+                  }}
                   className="bg-gray-500 text-white px-6 py-2 rounded-full hover:bg-gray-600 transition duration-300"
                 >
                   Cancel
@@ -595,7 +772,6 @@ function Profile() {
             </div>
           )}
 
-          {/* Profile Information Display */}
           {!isEditingProfile && (
             <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
               <h2 className="text-2xl font-semibold text-gray-800 mb-6">Profile Information</h2>
@@ -622,7 +798,6 @@ function Profile() {
             </div>
           )}
 
-          {/* My Bookings Section */}
           <div className="bg-white rounded-2xl shadow-xl p-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-semibold text-gray-800">My Bookings</h2>
@@ -631,7 +806,6 @@ function Profile() {
               </div>
             </div>
 
-            {/* Booking Tabs */}
             <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
               <button
                 onClick={() => setActiveTab('status')}
@@ -661,11 +835,10 @@ function Profile() {
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Cancellations ({stats.cancellations}) {/* CHANGED: Renamed to "Cancellations" */}
+                Cancellations ({stats.cancellations})
               </button>
             </div>
 
-            {/* Booking Content */}
             {loadingBookings ? (
               <div className="flex justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-blue-600"></div>
@@ -678,7 +851,7 @@ function Profile() {
                 <p className="text-gray-600">
                   {activeTab === 'status' && 'No current bookings found.'}
                   {activeTab === 'history' && 'No completed bookings found.'}
-                  {activeTab === 'cancellations' && 'No cancellations or cancel requests found.'} {/* CHANGED: Updated message */}
+                  {activeTab === 'cancellations' && 'No cancellations or cancel requests found.'}
                 </p>
               </div>
             ) : (
@@ -690,16 +863,15 @@ function Profile() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking Info</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                      {activeTab === 'status' && (
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                      )}
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {getFilteredBookings().map((booking) => {
                       const isPastDate = new Date(booking.booking_date) < new Date();
                       const canRequestCancel = (booking.status === 'confirmed' || booking.status === 'pending') && !isPastDate;
-                      
+                      const isCompleted = booking.status === 'completed' || (booking.status === 'confirmed' && isPastDate);
+
                       return (
                         <tr key={booking.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4">
@@ -771,55 +943,65 @@ function Profile() {
                             )}
                             {booking.status === 'cancel-requested' && (
                               <div className="mt-1 text-xs text-orange-600">
-                                Cancellation requested on {formatDate(booking.created_at)} {/* CHANGED: Fallback to created_at */}
+                                Cancellation requested on {formatDate(booking.created_at)}
                               </div>
                             )}
-                            {booking.status === 'cancelled' && ( // CHANGED: Handle approved cancellations
+                            {booking.status === 'cancelled' && (
                               <div className="mt-1 text-xs text-red-600">
-                                Cancelled on {formatDate(booking.created_at)} {/* CHANGED: Fallback to created_at */}
+                                Cancelled on {formatDate(booking.created_at)}
                               </div>
                             )}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-900 font-medium">
                             ₱{booking.total_price.toLocaleString()}
                           </td>
-                          {activeTab === 'status' && (
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col gap-2">
-                                {canRequestCancel && (
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-2">
+                              {activeTab === 'status' && canRequestCancel && (
+                                <button
+                                  onClick={() => handleCancelRequestClick(booking.id)}
+                                  disabled={requestingCancel === booking.id}
+                                  className="text-orange-600 hover:text-orange-800 text-sm font-medium disabled:opacity-50 transition duration-200"
+                                >
+                                  {requestingCancel === booking.id ? (
+                                    <span className="flex items-center">
+                                      <svg className="animate-spin -ml-1 mr-2 h-3 w-3" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                      Requesting...
+                                    </span>
+                                  ) : 'Request Cancellation'}
+                                </button>
+                              )}
+                              {activeTab === 'history' && isCompleted && (
+                                feedbackSubmitted.has(booking.id) ? (
+                                  <span className="text-xs text-gray-500">Feedback Submitted</span>
+                                ) : (
                                   <button
-                                    onClick={() => handleCancelRequestClick(booking.id)}
-                                    disabled={requestingCancel === booking.id}
-                                    className="text-orange-600 hover:text-orange-800 text-sm font-medium disabled:opacity-50 transition duration-200"
+                                    onClick={() => handleFeedbackClick(booking.id)}
+                                    className="text-blue-600 hover:text-blue-800 text-sm font-medium transition duration-200"
                                   >
-                                    {requestingCancel === booking.id ? (
-                                      <span className="flex items-center">
-                                        <svg className="animate-spin -ml-1 mr-2 h-3 w-3" fill="none" viewBox="0 0 24 24">
-                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Requesting...
-                                      </span>
-                                    ) : 'Request Cancellation'}
+                                    Provide Feedback
                                   </button>
-                                )}
-                                {booking.status === 'pending' && (
-                                  <div className="text-xs text-gray-500">
-                                    Contact support for changes
-                                  </div>
-                                )}
-                                {!canRequestCancel && isPastDate && booking.status === 'confirmed' && (
-                                  <span className="text-xs text-gray-500">Tour completed</span>
-                                )}
-                                {booking.status === 'cancel-requested' && (
-                                  <span className="text-xs text-orange-500">Awaiting approval</span>
-                                )}
-                                {booking.status === 'cancelled' && ( // CHANGED: Show final state
-                                  <span className="text-xs text-red-500">Cancellation approved</span>
-                                )}
-                              </div>
-                            </td>
-                          )}
+                                )
+                              )}
+                              {booking.status === 'pending' && activeTab === 'status' && (
+                                <div className="text-xs text-gray-500">
+                                  Contact support for changes
+                                </div>
+                              )}
+                              {!canRequestCancel && isPastDate && booking.status === 'confirmed' && activeTab === 'status' && (
+                                <span className="text-xs text-gray-500">Tour completed</span>
+                              )}
+                              {booking.status === 'cancel-requested' && (
+                                <span className="text-xs text-orange-500">Awaiting approval</span>
+                              )}
+                              {booking.status === 'cancelled' && (
+                                <span className="text-xs text-red-500">Cancellation approved</span>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
@@ -828,10 +1010,9 @@ function Profile() {
               </div>
             )}
 
-            {/* Booking Status Legend */}
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="text-sm font-medium text-gray-800 mb-3">Booking Status Guide</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3"> {/* CHANGED: Adjusted to 4 columns for new status */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className="flex items-center">
                   <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-yellow-600 bg-yellow-100 border-yellow-200 mr-2">
                     {getStatusIcon('pending')}
@@ -858,7 +1039,7 @@ function Profile() {
                     {getStatusIcon('cancelled')}
                     Cancelled
                   </span>
-                  <span className="text-xs text-gray-600">Cancellation approved</span> {/* CHANGED: Added cancelled status */}
+                  <span className="text-xs text-gray-600">Cancellation approved</span>
                 </div>
               </div>
             </div>
@@ -866,39 +1047,43 @@ function Profile() {
         </div>
       </div>
 
-      {/* Logout Confirmation Modal */}
       <LogoutModal
         showLogoutModal={showLogoutModal}
         setShowLogoutModal={setShowLogoutModal}
         handleLogout={handleLogout}
       />
 
-      {/* Success Modal */}
       <SuccessModal
         showSuccessModal={showSuccessModal}
         setShowSuccessModal={setShowSuccessModal}
         message={successMessage}
       />
 
-      {/* Error Modal */}
       <ErrorModal
         showErrorModal={showErrorModal}
         setShowErrorModal={setShowErrorModal}
         message={errorMessage}
       />
 
-      {/* Cancel Request Confirmation Modal */}
       <ConfirmCancelRequestModal
         showCancelRequestModal={showCancelRequestModal}
         setShowCancelRequestModal={setShowCancelRequestModal}
         handleCancelRequest={handleCancelRequest}
         cancelRequestBookingId={cancelRequestBookingId}
       />
+
+      <FeedbackModal
+        showFeedbackModal={showFeedbackModal}
+        setShowFeedbackModal={setShowFeedbackModal}
+        feedbackData={feedbackData}
+        setFeedbackData={setFeedbackData}
+        handleFeedbackSubmit={handleFeedbackSubmit}
+        tourTitle={bookings.find(b => b.id === feedbackBookingId)?.tours?.title || 'Tour'}
+      />
     </>
   );
 }
 
-// Logout Confirmation Modal Component
 const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
   if (!showLogoutModal) return null;
 
@@ -940,7 +1125,6 @@ const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
   );
 };
 
-// Success Modal Component
 const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
   if (!showSuccessModal) return null;
 
@@ -976,7 +1160,6 @@ const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
   );
 };
 
-// Error Modal Component
 const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
   if (!showErrorModal) return null;
 
@@ -1012,7 +1195,6 @@ const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
   );
 };
 
-// Cancel Request Confirmation Modal Component
 const ConfirmCancelRequestModal = ({ showCancelRequestModal, setShowCancelRequestModal, handleCancelRequest, cancelRequestBookingId }) => {
   if (!showCancelRequestModal) return null;
 
@@ -1047,6 +1229,66 @@ const ConfirmCancelRequestModal = ({ showCancelRequestModal, setShowCancelReques
             style={{ backgroundColor: '#00355f', color: 'white' }}
           >
             Submit Request
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FeedbackModal = ({ showFeedbackModal, setShowFeedbackModal, feedbackData, setFeedbackData, handleFeedbackSubmit, tourTitle }) => {
+  if (!showFeedbackModal) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
+      <div className="bg-white rounded-xl max-w-md w-full p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
+            Feedback for {tourTitle}
+          </h2>
+          <button
+            onClick={() => setShowFeedbackModal(false)}
+            className="text-gray-500 hover:text-gray-700 text-xl"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Rating</label>
+          <div className="flex space-x-1">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <FaStar
+                key={star}
+                className={`h-6 w-6 cursor-pointer ${feedbackData.rating >= star ? 'text-yellow-400' : 'text-gray-300'}`}
+                onClick={() => setFeedbackData({ ...feedbackData, rating: star })}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
+          <textarea
+            value={feedbackData.comments}
+            onChange={(e) => setFeedbackData({ ...feedbackData, comments: e.target.value })}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            rows="4"
+            placeholder="Share your experience..."
+          />
+        </div>
+        <div className="flex justify-end space-x-4">
+          <button
+            onClick={() => setShowFeedbackModal(false)}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium rounded-lg"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleFeedbackSubmit}
+            className="px-4 py-2 rounded-lg font-medium transition-colors"
+            style={{ backgroundColor: '#00355f', color: 'white' }}
+          >
+            Submit Feedback
           </button>
         </div>
       </div>

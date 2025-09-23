@@ -1,7 +1,22 @@
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, FlatList, type KeyboardTypeOptions } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  FlatList,
+  type KeyboardTypeOptions,
+} from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
 interface Tour {
@@ -15,7 +30,9 @@ interface Tour {
   sub_images?: string[];
   features?: { text: string; available: boolean }[];
 }
+
 type TabType = 'all' | 'regular' | 'combo';
+
 interface TourFormData {
   title: string;
   price: string;
@@ -26,6 +43,8 @@ interface TourFormData {
   sub_images: string[];
   features: { text: string; available: boolean }[];
 }
+
+const durationOptions = ['Half Day', 'Whole Day', 'Two Days', 'Three Days'];
 
 export default function ManageToursScreen() {
   const router = useRouter();
@@ -216,7 +235,7 @@ export default function ManageToursScreen() {
     const { title, price, duration, location, image } = formData;
     if (!title.trim()) return Alert.alert('Validation Error', 'Enter a tour title.'), false;
     if (!price || isNaN(Number(price)) || Number(price) <= 0) return Alert.alert('Validation Error', 'Enter a valid price.'), false;
-    if (!duration.trim()) return Alert.alert('Validation Error', 'Enter tour duration.'), false;
+    if (!duration.trim()) return Alert.alert('Validation Error', 'Select a tour duration.'), false;
     if (!location.trim()) return Alert.alert('Validation Error', 'Enter tour location.'), false;
     if (!image) return Alert.alert('Validation Error', 'Upload a tour image.'), false;
     return true;
@@ -318,13 +337,12 @@ export default function ManageToursScreen() {
   const renderModal = () => {
     const fields: {
       label: string;
-      key: keyof Pick<TourFormData, 'title' | 'price' | 'duration' | 'location'>;
+      key: keyof Pick<TourFormData, 'title' | 'price' | 'location'>;
       placeholder: string;
       keyboardType?: KeyboardTypeOptions;
     }[] = [
       { label: 'Tour Title', key: 'title', placeholder: 'Enter tour title' },
       { label: 'Price (₱)', key: 'price', placeholder: 'Enter price', keyboardType: 'numeric' },
-      { label: 'Duration', key: 'duration', placeholder: 'e.g., Half Day, Full Day' },
       { label: 'Location', key: 'location', placeholder: 'Enter tour location' },
     ];
 
@@ -353,6 +371,22 @@ export default function ManageToursScreen() {
                     />
                   </View>
                 ))}
+                {/* Duration Dropdown */}
+                <View style={s.formGroup}>
+                  <Text style={s.label}>Duration</Text>
+                  <View style={[s.input, s.pickerContainer]}>
+                    <Picker
+                      selectedValue={formData.duration}
+                      onValueChange={(value) => setFormData({ ...formData, duration: value })}
+                      style={s.picker}
+                    >
+                      <Picker.Item label="Select duration" value="" enabled={false} />
+                      {durationOptions.map((option) => (
+                        <Picker.Item key={option} label={option} value={option} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
                 <View style={s.formGroup}>
                   <Text style={s.label}>Tour Type</Text>
                   <View style={s.typeSelector}>
@@ -745,6 +779,27 @@ const s = StyleSheet.create({
   formGroup: { paddingHorizontal: 20, marginBottom: 20 },
   label: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 8 },
   input: { backgroundColor: '#f8f9fa', borderRadius: 8, padding: 12, fontSize: 16, color: '#333', borderWidth: 1, borderColor: '#e0e0e0' },
+  pickerContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  picker: {
+    width: '100%',
+    color: '#333',
+    fontSize: 16,
+    height: 48, // Fixed height to match input fields
+  },
+  pickerItem: {
+    fontSize: 16,
+    color: '#333', // Text color for dropdown items
+  },
   typeSelector: { flexDirection: 'row', gap: 10 },
   typeOption: { flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: '#f8f9fa', alignItems: 'center', borderWidth: 1, borderColor: '#e0e0e0' },
   activeTypeOption: { backgroundColor: '#E3F2FD', borderColor: '#1976D2' },
