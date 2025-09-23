@@ -118,43 +118,56 @@ export default function BookingsScreen() {
   }, [bookingId]);
 
   const handleStatusChange = async (bookingId: string, newStatus: Booking['status']) => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.from('bookings').update({ status: newStatus }).eq('id', bookingId);
-      if (error) throw new Error(`Failed to update booking status: ${error.message}`);
+  setLoading(true);
+  try {
+    const { error } = await supabase
+      .from("bookings")
+      .update({ status: newStatus })
+      .eq("id", bookingId);
 
-      setBookings(prev => prev.map(b => (b.id === bookingId ? { ...b, status: newStatus } : b)));
+    if (error) throw new Error(`Failed to update booking status: ${error.message}`);
 
-      if (newStatus === 'cancelled') {
-        const response = await fetch('https://zxzpvrpjavucfrzxkgfo.supabase.co/functions/v1/send-email', {
-          method: 'POST',
+    setBookings(prev => prev.map(b => (b.id === bookingId ? { ...b, status: newStatus } : b)));
+
+    // Trigger email if status is confirmed or completed
+    if (["confirmed", "completed"].includes(newStatus)) {
+      const response = await fetch(
+        "https://zxzpvrpjavucfrzxkgfo.supabase.co/functions/v1/send-booking-email",
+        {
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             Authorization: `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ bookingId }),
-        });
-        if (!response.ok) throw new Error((await response.json()).error || 'Failed to send cancellation email');
-      }
+          body: JSON.stringify({ bookingId, status: newStatus }),
+        }
+      );
 
-      setMessageModal({
-        visible: true,
-        title: 'Success',
-        message: `Booking status changed to ${newStatus}`,
-        type: 'success',
-      });
-    } catch (error: any) {
-      console.error('Error:', error.message);
-      setMessageModal({
-        visible: true,
-        title: 'Error',
-        message: error.message || 'Failed to update booking status.',
-        type: 'error',
-      });
-    } finally {
-      setLoading(false);
+      if (!response.ok) {
+        const res = await response.json();
+        throw new Error(res.error || "Failed to send booking email");
+      }
     }
-  };
+
+    setMessageModal({
+      visible: true,
+      title: "Success",
+      message: `Booking status changed to ${newStatus}`,
+      type: "success",
+    });
+  } catch (error: any) {
+    console.error("Error:", error.message);
+    setMessageModal({
+      visible: true,
+      title: "Error",
+      message: error.message || "Failed to update booking status.",
+      type: "error",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const openModal = (type: 'edit' | 'view', booking: Booking) => {
     setModal({ visible: true, type, booking });
