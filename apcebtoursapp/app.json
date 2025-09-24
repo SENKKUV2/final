@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "scheme": "yourappname",
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/apcebu-logo.jpg",
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF",
+          "imageWidth": 200
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.anonymous.apcebutours"
+    }
+  }
+}
