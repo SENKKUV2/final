@@ -1,16 +1,20 @@
-import { useState, useEffect } from "react";
+// App.jsx
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Route, Routes, useNavigate, useLocation } from "react-router-dom";
-import About from "./About";
 import { useAuth } from "./AuthContext";
-import Bookings from "./Bookings";
-import Contact from "./Contact";
-import Home from "./Home";
 import { supabase } from "./lib/supabase";
 import Navbar from "./Navbar";
-import Profile from "./Profile";
-import Tours from "./Tours";
 import Chatbot from "./AI/Chatbot";
 import { FaRobot } from "react-icons/fa";
+import logo from "./assets/apcebulogo.png"; // Import logo for optimization
+
+// Lazy-loaded components
+const Home = lazy(() => import("./Home"));
+const Tours = lazy(() => import("./Tours"));
+const Bookings = lazy(() => import("./Bookings"));
+const Contact = lazy(() => import("./Contact"));
+const Profile = lazy(() => import("./Profile"));
+const About = lazy(() => import("./About"));
 
 // Loading Screen Component
 const LoadingScreen = () => (
@@ -53,15 +57,10 @@ function App() {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Handle route changes to show loading screen
+  // Optimized route change handling
   useEffect(() => {
-    const handleStart = () => setLoading(true);
-    const handleStop = () => setTimeout(() => setLoading(false), 500); // Short delay for smoother UX
-
-    // Simulate navigation start/stop (react-router-dom doesn't have direct events for this)
-    handleStart();
-    const timer = setTimeout(handleStop, 500);
-
+    setLoading(true);
+    const timer = setTimeout(() => setLoading(false), 300); // Shortened delay
     return () => clearTimeout(timer);
   }, [location.pathname]);
 
@@ -85,6 +84,7 @@ function App() {
           password,
         });
         if (error) throw error;
+        setUser(data.user);
         setSuccessMessage("Login successful!");
         setShowSuccessModal(true);
         setShowAuthModal(false);
@@ -105,6 +105,7 @@ function App() {
           },
         });
         if (error) throw error;
+        setUser(data.user);
         setSuccessMessage(
           "Registration successful! Please check your email to verify your account."
         );
@@ -152,49 +153,42 @@ function App() {
 
   return (
     <div>
-      {/* Global Loading Screen */}
       {loading && <LoadingScreen />}
-
-      {/* Global Navbar */}
       <Navbar
         user={user}
         onLogout={handleLogoutClick}
         onLoginClick={handleLoginClick}
         onSignupClick={handleSignupClick}
-        onChatbotClick={() => setIsChatbotOpen(!isChatbotOpen)}
+        onChatbotClick={() => setIsChatbotOpen(true)}
       />
-
-      {/* Main Content */}
       <div className="pt-20">
-        <Routes>
-          <Route
-            path="/"
-            element={<Home user={user} onLoginClick={handleLoginClick} />}
-          />
-          <Route path="/tours" element={<Tours />} />
-          <Route path="/bookings" element={<Bookings />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/about" element={<About />} />
-        </Routes>
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            <Route path="/" element={<Home user={user} onLoginClick={handleLoginClick} />} />
+            <Route path="/tours" element={<Tours />} />
+            <Route path="/bookings" element={<Bookings />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/about" element={<About />} />
+          </Routes>
+        </Suspense>
       </div>
-
-      {/* Floating Chatbot Button */}
       <button
         onClick={() => setIsChatbotOpen(!isChatbotOpen)}
         className="fixed bottom-4 right-4 group bg-[#00355f] p-4 rounded-full shadow-xl hover:scale-110 transition-transform duration-300 z-40"
         aria-label="Open chatbot"
       >
-        <FaRobot 
-          size={28} 
-          className="text-white group-hover:rotate-12 transition-transform duration-300" 
+        <FaRobot
+          size={28}
+          className="text-white group-hover:rotate-12 transition-transform duration-300"
         />
       </button>
-
-      {/* Chatbot Modal */}
-      <Chatbot user={user} isOpen={isChatbotOpen} setIsOpen={setIsChatbotOpen} />
-
-      {/* Global Auth Modal */}
+      <Chatbot
+        user={user}
+        isOpen={isChatbotOpen}
+        setIsOpen={setIsChatbotOpen}
+        setIsAIOpen={setIsChatbotOpen}
+      />
       <AuthModal
         showAuthModal={showAuthModal}
         setShowAuthModal={setShowAuthModal}
@@ -216,22 +210,16 @@ function App() {
         setConfirmPassword={setConfirmPassword}
         resetAuthForm={resetAuthForm}
       />
-
-      {/* Logout Confirmation Modal */}
       <LogoutModal
         showLogoutModal={showLogoutModal}
         setShowLogoutModal={setShowLogoutModal}
         handleLogout={handleLogout}
       />
-
-      {/* Success Modal */}
       <SuccessModal
         showSuccessModal={showSuccessModal}
         setShowSuccessModal={setShowSuccessModal}
         message={successMessage}
       />
-
-      {/* Error Modal */}
       <ErrorModal
         showErrorModal={showErrorModal}
         setShowErrorModal={setShowErrorModal}
@@ -291,54 +279,50 @@ const AuthModal = ({
               ×
             </button>
           </div>
-
           <form onSubmit={handleAuth} className="space-y-4">
             {!isLogin && (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      required={!isLogin}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="First Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      required={!isLogin}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Last Name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      M.I. (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={middleInitial}
-                      onChange={(e) => setMiddleInitial(e.target.value)}
-                      maxLength={1}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="M.I."
-                    />
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required={!isLogin}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="First Name"
+                  />
                 </div>
-              </>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required={!isLogin}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Last Name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    M.I. (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={middleInitial}
+                    onChange={(e) => setMiddleInitial(e.target.value)}
+                    maxLength={1}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="M.I."
+                  />
+                </div>
+              </div>
             )}
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Email
@@ -352,7 +336,6 @@ const AuthModal = ({
                 placeholder="Enter your email"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Password
@@ -386,7 +369,6 @@ const AuthModal = ({
                 </button>
               </div>
             </div>
-
             {!isLogin && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -422,7 +404,6 @@ const AuthModal = ({
                 </div>
               </div>
             )}
-
             <button
               type="submit"
               disabled={authLoading}
@@ -435,7 +416,6 @@ const AuthModal = ({
               {authLoading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
             </button>
           </form>
-
           <div className="mt-4 text-center">
             <button
               onClick={() => setIsLogin(!isLogin)}
@@ -451,7 +431,7 @@ const AuthModal = ({
   );
 };
 
-// Logout Confirmation Modal Component
+// LogoutModal Component
 const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
   if (!showLogoutModal) return null;
 
@@ -491,7 +471,7 @@ const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
   );
 };
 
-// Success Modal Component
+// SuccessModal Component
 const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
   if (!showSuccessModal) return null;
 
@@ -525,7 +505,7 @@ const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
   );
 };
 
-// Error Modal Component
+// ErrorModal Component
 const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
   if (!showErrorModal) return null;
 

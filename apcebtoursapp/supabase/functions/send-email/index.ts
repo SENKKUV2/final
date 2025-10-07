@@ -58,7 +58,7 @@ serve(async (req) => {
       }
 
       const sendResult = await resend.emails.send({
-        from: 'Tour Company <onboarding@resend.dev>', // ✅ Use verified domain later
+        from: 'APTours Cebu <onboarding@resend.dev>', // ✅ Use verified domain later
         to: [recipientEmail],
         subject: `Booking Cancellation Confirmed: ${tourTitle}`,
         html: `

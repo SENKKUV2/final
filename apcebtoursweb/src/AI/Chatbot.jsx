@@ -1,18 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { FaPaperPlane, FaHistory, FaTimes, FaUserCircle, FaRobot, FaPlus } from "react-icons/fa";
+import { FaPaperPlane, FaComments, FaTimes, FaUserCircle, FaRobot } from "react-icons/fa";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 // Helper component for the typing animation
 const TypingIndicator = () => (
     <div className="flex justify-start mb-4">
-        <div className="bg-gray-200 p-3 rounded-t-xl rounded-br-xl shadow-sm text-sm flex items-center">
+        <div className="bg-gray-100 p-3 rounded-t-xl rounded-br-xl shadow-sm text-sm flex items-center">
             <div className="typing-dot bg-gray-400"></div>
             <div className="typing-dot bg-gray-400 mx-1"></div>
             <div className="typing-dot bg-gray-400"></div>
         </div>
-        <style jsx>{`
+        <style>{`
             .typing-dot {
                 width: 6px;
                 height: 6px;
@@ -33,32 +33,72 @@ const TypingIndicator = () => (
     </div>
 );
 
-const Chatbot = ({ user, isOpen, setIsOpen, tourId = null }) => {
+const Chatbot = ({ user, isOpen, setIsOpen, tourId = null, resetTrigger }) => {
     const [message, setMessage] = useState("");
     const [messages, setMessages] = useState([]);
     const [isBotTyping, setIsBotTyping] = useState(false);
     const [chatHistory, setChatHistory] = useState([]);
     const [currentChatId, setCurrentChatId] = useState(null);
-    const [isHistoryVisible, setIsHistoryVisible] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
     const messagesEndRef = useRef(null);
+    const messageInputRef = useRef(null);
 
+    // Reset state and load data when panel opens or resetTrigger changes
     useEffect(() => {
-        if (user) {
-            loadChatHistory();
-            startNewChat(user?.full_name || "Guest");
+        if (isOpen) {
+            setMessages([]); // Clear messages
+            setMessage(""); // Clear input
+            setCurrentChatId(null); // Clear current chat
+            setShowHistory(false); // Hide chat history
+            if (user) {
+                loadChatHistory();
+                startNewChat(user?.full_name || "Guest");
+            }
+            if (tourId) {
+                fetchTourDetails(tourId);
+            }
         }
-        if (tourId) {
-            fetchTourDetails(tourId);
-        }
-    }, [user, tourId]);
+    }, [isOpen, user, tourId, resetTrigger]);
 
+    // Scroll to the latest message
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, isBotTyping]);
 
+    // Save chat when messages change
     useEffect(() => {
         if (messages.length > 1 && user) saveCurrentChat();
     }, [messages]);
+
+    // Real-time subscription for new messages
+    useEffect(() => {
+        if (!isOpen || !user?.id) return;
+
+        const subscription = supabase
+            .channel("chat_messages")
+            .on(
+                "postgres_changes",
+                {
+                    event: "INSERT",
+                    schema: "public",
+                    table: "chats",
+                    filter: `user_id=eq.${user.id}`,
+                },
+                (payload) => {
+                    setChatHistory((prev) => {
+                        const updatedHistory = [...prev, payload.new].sort(
+                            (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+                        );
+                        return updatedHistory.length > 50 ? updatedHistory.slice(0, 50) : updatedHistory;
+                    });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(subscription);
+        };
+    }, [isOpen, user]);
 
     const fetchTourDetails = async (tourId) => {
         try {
@@ -193,34 +233,32 @@ What else would you like to know about this amazing experience?`,
             ]
         };
         setMessages([welcomeMessage]);
-        setIsHistoryVisible(false);
+        setShowHistory(false);
     };
 
-    const loadChatFromHistory = (chat) => {
-        setMessages(chat.messages);
-        setCurrentChatId(chat.id);
-        setIsHistoryVisible(false);
-    };
-
-    const deleteChat = async (chatId) => {
+    const loadChatFromHistory = async (chatId) => {
         try {
-            if (!user) return;
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from("chats")
-                .delete()
+                .select("*")
                 .eq("id", chatId)
-                .eq("user_id", user.id);
+                .single();
+
             if (error) throw error;
-            setChatHistory((prev) => prev.filter((chat) => chat.id !== chatId));
-            if (currentChatId === chatId) startNewChat(user?.full_name || "Guest");
-        } catch (e) {
-            console.error("Failed to delete chat:", e.message);
+
+            if (data) {
+                setMessages(data.messages);
+                setCurrentChatId(data.id);
+                setShowHistory(false);
+            }
+        } catch (err) {
+            console.error("❌ Failed to load chat:", err.message);
         }
     };
 
     const getAIResponse = async (userMessageText, conversationHistory) => {
         const apiKey = "AIzaSyBl_OV_7upAcm1FBlj4CHJe7QVocNlNJf0"; // Use env variable in production
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
         const userName = user?.full_name || "the user";
         const currentDate = new Date().toLocaleDateString("en-US", {
@@ -335,6 +373,7 @@ ${userMessageText}
             text: messageText.trim(),
             sender: "user",
             timestamp: new Date(),
+            seen: false,
         };
 
         const updatedMessages = [...messages, userMessage];
@@ -349,6 +388,7 @@ ${userMessageText}
                 text: botResponseText,
                 sender: "bot",
                 timestamp: new Date(),
+                seen: true,
             };
             setMessages((prev) => [...prev, botMessage]);
         } catch (error) {
@@ -358,6 +398,7 @@ ${userMessageText}
                 text: "I'm having a little trouble connecting right now. Please try again in a bit!",
                 sender: "bot",
                 timestamp: new Date(),
+                seen: true,
             };
             setMessages((prev) => [...prev, errorMessage]);
         } finally {
@@ -368,102 +409,94 @@ ${userMessageText}
     if (!isOpen) return null;
 
     return (
-        <div className="fixed bottom-4 right-4 w-96 max-h-[600px] h-[calc(100vh-100px)] bg-white rounded-2xl shadow-2xl z-50 flex flex-col font-sans transition-all duration-300 transform scale-100 opacity-100">
-             {/* Header */}
-            <div className="flex justify-between items-center p-4 bg-[#ffffff] text-white rounded-t-2xl shadow-md">
+        <div className="fixed bottom-4 right-4 w-96 max-h-[600px] h-[calc(100vh-100px)] bg-white rounded-2xl shadow-2xl z-50 flex flex-col font-sans">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 bg-[#00355f] text-white rounded-t-2xl">
                 <div className="flex items-center space-x-3">
-                    <FaRobot className="w-6 h-6 text-[#00355f]" />
-                    <h3 className="font-semibold text-[#00355f]">TourGuide AI</h3>
+                    <FaRobot className="w-6 h-6" />
+                    <h3 className="font-semibold">TourGuide AI</h3>
                 </div>
-                <div className="flex space-x-2">
+                <div className="flex items-center space-x-3">
                     <button
-    onClick={() => setIsHistoryVisible(true)}
-    className="p-2 rounded-full hover:bg-[#00355f] hover:bg-opacity-20 transition-colors duration-200"
-    aria-label="View chat history"
->
-    <FaHistory className="text-[#00355f]" />
-</button>
-<button
-    onClick={() => setIsOpen(false)}
-    className="p-2 rounded-full hover:bg-[#00355f] hover:bg-opacity-20 transition-colors duration-200"
-    aria-label="Close chatbot"
->
-    <FaTimes className="text-[#00355f]" />
-</button>
+                        onClick={() => setShowHistory(!showHistory)}
+                        className="p-2 rounded-full hover:bg-white hover:bg-opacity-20"
+                    >
+                        <FaComments size={18} />
+                    </button>
+                    <button
+                        onClick={() => setIsOpen(false)}
+                        className="p-2 rounded-full hover:bg-white hover:bg-opacity-20"
+                    >
+                        <FaTimes size={20} />
+                    </button>
                 </div>
             </div>
 
-            {/* Chat History */}
-            {isHistoryVisible && (
-                <div className="absolute inset-0 bg-white rounded-2xl p-4 flex flex-col z-10 transition-transform duration-300 transform scale-100">
-                    <div className="flex justify-between items-center mb-4 border-b pb-2">
-                        <h4 className="font-bold text-lg text-gray-800">Recent Chats</h4>
-                        <button onClick={() => setIsHistoryVisible(false)} className="text-gray-500 hover:text-gray-800 transition-colors" aria-label="Close history">
-                            <FaTimes size={20} />
-                        </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
-                        {chatHistory.length === 0 ? (
-                            <p className="text-gray-500 text-center text-sm pt-4">No recent chats found.</p>
-                        ) : (
-                            chatHistory.map((chat) => (
-                                <div
-                                    key={chat.id}
-                                    className="group flex justify-between items-center p-3 rounded-lg border border-gray-200 hover:bg-gray-100 transition-all duration-200"
-                                >
-                                    <button
-                                        onClick={() => loadChatFromHistory(chat)}
-                                        className="text-left flex-1 truncate text-sm font-medium text-gray-700"
-                                    >
-                                        {chat.title}
-                                    </button>
-                                    <button
-                                        onClick={() => deleteChat(chat.id)}
-                                        className="text-red-400 text-xs ml-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 transform scale-90 group-hover:scale-100"
-                                        aria-label="Delete chat"
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                    <button
-                        onClick={() => startNewChat(user?.full_name || "Guest")}
-                        className="mt-4 flex items-center justify-center space-x-2 bg-teal-500 text-white py-3 rounded-xl font-semibold shadow-md hover:bg-teal-600 transition-colors duration-200 transform hover:scale-105"
-                    >
-                        <FaPlus />
-                        <span>Start New Chat</span>
-                    </button>
+            {/* Chat history sidebar */}
+            {showHistory && (
+                <div className="absolute left-[-240px] top-0 w-60 h-full bg-gray-50 border-r shadow-md z-50 p-3 overflow-y-auto">
+                    <h4 className="font-semibold mb-3">Recent Chats</h4>
+                    {chatHistory.length ? (
+                        chatHistory.map((chat) => (
+                            <div
+                                key={chat.id}
+                                onClick={() => {
+                                    loadChatFromHistory(chat.id);
+                                    setShowHistory(false);
+                                }}
+                                className="p-3 mb-2 bg-white rounded-lg shadow cursor-pointer hover:bg-blue-50"
+                            >
+                                <p className="font-medium text-sm">{chat.title}</p>
+                                <p className="text-xs text-gray-500">
+                                    {new Date(chat.timestamp).toLocaleString()}
+                                </p>
+                            </div>
+                        ))
+                    ) : (
+                        <p className="text-gray-500 text-sm">No past chats</p>
+                    )}
                 </div>
             )}
 
             {/* Messages */}
-            <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
-                {messages.map((msg) => (
-                    <div
-                        key={msg.id}
-                        className={`flex mb-4 ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
-                    >
-                        <div className="flex items-start max-w-[80%]">
-                            {msg.sender === "bot" && (
-                                <FaRobot className="w-6 h-6 text-blue-700 mr-2 flex-shrink-0 mt-1" />
-                            )}
-                            <div
-                                className={`p-3 rounded-xl shadow-sm ${
-                                    msg.sender === "user"
-                                        ? "bg-blue-600 text-white rounded-b-xl rounded-tl-xl"
-                                        : "bg-gray-100 text-gray-800 rounded-b-xl rounded-tr-xl"
-                                }`}
-                            >
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
-                            </div>
-                            {msg.sender === "user" && (
-                                <FaUserCircle className="w-6 h-6 text-gray-500 ml-2 flex-shrink-0 mt-1" />
-                            )}
-                        </div>
+            <div className="flex-1 p-4 overflow-y-auto max-h-[calc(100%-140px)]">
+                {messages.length === 0 ? (
+                    <div className="text-center text-gray-500 mt-8">
+                        <FaRobot className="mx-auto mb-2" size={32} />
+                        <p>Start a conversation</p>
                     </div>
-                ))}
+                ) : (
+                    messages.map((msg) => (
+                        <div
+                            key={msg.id}
+                            className={`flex mb-4 ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+                        >
+                            <div className="flex items-start max-w-[80%]">
+                                {msg.sender === "bot" && (
+                                    <FaRobot className="w-6 h-6 text-blue-600 mr-2" />
+                                )}
+                                <div
+                                    className={`p-3 rounded-xl shadow-sm ${
+                                        msg.sender === "user"
+                                            ? "bg-blue-600 text-white rounded-tl-xl"
+                                            : "bg-gray-100 text-gray-800 rounded-tr-xl"
+                                    }`}
+                                >
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+                                    <div className="flex justify-between mt-1 text-xs text-gray-400">
+                                        <span>{msg.timestamp.toLocaleTimeString()}</span>
+                                        {msg.sender === "user" && (
+                                            <span>{msg.seen ? "✅" : "⏳"}</span>
+                                        )}
+                                    </div>
+                                </div>
+                                {msg.sender === "user" && (
+                                    <FaUserCircle className="w-6 h-6 text-gray-500 ml-2" />
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
                 {isBotTyping && <TypingIndicator />}
                 <div ref={messagesEndRef} />
             </div>
@@ -477,7 +510,7 @@ ${userMessageText}
                             <button
                                 key={index}
                                 onClick={() => sendMessage(q)}
-                                className="w-full text-left px-4 py-2 rounded-full border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+                                className="w-full text-left px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
                                 {q}
                             </button>
@@ -487,27 +520,27 @@ ${userMessageText}
             )}
 
             {/* Input */}
-            <div className="p-4 border-t border-gray-200 bg-white">
-                <div className="flex space-x-2 items-center">
+            <div className="p-4 border-t flex-shrink-0">
+                <div className="flex items-center space-x-2 w-full">
                     <input
+                        ref={messageInputRef}
                         type="text"
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
-                        placeholder="Ask about tours or bookings..."
-                        className="flex-1 p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all"
                         onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                        placeholder="Ask about tours or bookings..."
+                        className="flex-1 p-2 border rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full max-w-[calc(100%-60px)]"
                     />
                     <button
                         onClick={() => sendMessage()}
-                        className={`p-3 rounded-full shadow-lg transform hover:scale-105 transition-all duration-200 ${
-                            message.trim()
-                                ? "bg-teal-500 text-white"
-                                : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                        }`}
                         disabled={!message.trim()}
-                        aria-label="Send message"
+                        className={`p-2 rounded-full flex-shrink-0 ${
+                            message.trim()
+                                ? "bg-blue-500 text-white"
+                                : "bg-gray-200 text-gray-400"
+                        }`}
                     >
-                        <FaPaperPlane />
+                        <FaPaperPlane size={16} />
                     </button>
                 </div>
             </div>

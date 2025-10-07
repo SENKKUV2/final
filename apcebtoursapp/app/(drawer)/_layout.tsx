@@ -1,4 +1,3 @@
-// app/(drawer)/_layout.tsx
 import { supabase } from '@/lib/supabase';
 import { MaterialIcons } from '@expo/vector-icons';
 import { DrawerContentScrollView } from '@react-navigation/drawer';
@@ -35,6 +34,12 @@ function CustomDrawerContent(props: any) {
       title: 'Reports', 
       icon: 'assessment',
       route: '/(drawer)/reports'
+    },
+    { 
+      name: 'messages', 
+      title: 'Messages', 
+      icon: 'message',
+      route: '/(drawer)/messages'
     },
     { 
       name: 'logout', 
@@ -209,6 +214,18 @@ export default function DrawerLayout() {
             ),
           }}
         />
+
+        <Drawer.Screen
+          name="messages"
+          options={{
+            drawerLabel: 'Messages',
+            title: 'Customer Messages',
+            drawerIcon: ({ color }) => (
+              <MaterialIcons name="message" size={24} color={color} />
+            ),
+          }}
+        />
+
         <Drawer.Screen
           name="settings"
           options={{

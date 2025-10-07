@@ -4,534 +4,329 @@ import { supabase } from "./lib/supabase";
 import Navbar from "./Navbar";
 import { useAuth } from "./AuthContext";
 import Chatbot from "./AI/Chatbot";
-import { FaRobot, FaStar } from "react-icons/fa";
+import { FaRobot, FaStar, FaSpinner } from "react-icons/fa";
 
 function Profile() {
-  const { user, setUser } = useAuth();
-  const [profile, setProfile] = useState(null);
-  const [bookings, setBookings] = useState([]);
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(new Set());
-  const [loadingUser, setLoadingUser] = useState(true);
-  const [loadingProfile, setLoadingProfile] = useState(true);
-  const [loadingBookings, setLoadingBookings] = useState(true);
-  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [activeTab, setActiveTab] = useState('status');
-  const [profileData, setProfileData] = useState({
-    full_name: '',
-    first_name: '',
-    last_name: '',
-    middle_initial: '',
-    phone: '',
-    avatar_url: ''
-  });
-  const [passwordData, setPasswordData] = useState({
-    oldPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
-  const [passwordError, setPasswordError] = useState('');
-  const [updatingProfile, setUpdatingProfile] = useState(false);
-  const [updatingPassword, setUpdatingPassword] = useState(false);
-  const [requestingCancel, setRequestingCancel] = useState(null);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
-  const [cancelRequestBookingId, setCancelRequestBookingId] = useState(null);
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [feedbackBookingId, setFeedbackBookingId] = useState(null);
-  const [feedbackData, setFeedbackData] = useState({
-    rating: 0,
-    comments: ''
-  });
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const [state, setState] = useState({
+    profile: null,
+    bookings: [],
+    filteredBookings: [],
+    searchQuery: '',
+    feedbackSubmitted: new Set(),
+    loading: false,
+    isChatbotOpen: false,
+    isEditingProfile: false,
+    isChangingPassword: false,
+    activeTab: 'all',
+    profileData: { full_name: '', first_name: '', last_name: '', middle_initial: '', phone: '', avatar_url: '' },
+    passwordData: { oldPassword: '', newPassword: '', confirmPassword: '' },
+    passwordError: '',
+    updating: { profile: false, password: false },
+    modals: { logout: false, success: false, error: false, feedback: false },
+    messages: { success: '', error: '' },
+    feedbackBookingId: null,
+    feedbackData: { rating: 0, comments: '' },
+    requestingCancel: null,
+    bookingFlags: {},
+  });
 
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        setUser(user ?? null);
-        setLoadingUser(false);
-      } catch (error) {
-        console.error("Error fetching user:", error);
-        setLoadingUser(false);
-      }
-    };
+  const updateState = (updates) => setState(prev => ({ ...prev, ...updates }));
 
-    getUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          fetchProfile(session.user.id);
-        } else {
-          setLoadingProfile(false);
-        }
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, [setUser]);
-
-  useEffect(() => {
-    if (user) {
-      fetchProfile(user.id);
-      fetchBookings();
-      fetchFeedbackStatus();
-    } else {
-      window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }));
-    }
-  }, [user]);
-
-  const fetchProfile = async (userId) => {
+  const loadData = async (userId) => {
+    updateState({ loading: true });
     try {
-      setLoadingProfile(true);
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const [profileData, bookingsData, feedbackData] = await Promise.all([
+        supabase.from("profiles").select("id, full_name, first_name, last_name, middle_initial, phone, avatar_url, email, created_at, role").eq("id", userId).single().then(({ data, error }) => {
+          if (error && error.code !== 'PGRST116') throw error;
+          return data;
+        }),
+        supabase.from("bookings").select(`id, created_at, booking_date, number_of_people, total_price, status, special_requests, contact_email, tour_id, tours ( title, duration, image, price ), profiles ( full_name )`).eq("user_id", userId).order("created_at", { ascending: false }).then(({ data, error }) => {
+          if (error) throw error;
+          return data || [];
+        }),
+        supabase.from("feedback").select("booking_id").eq("user_id", userId).then(({ data, error }) => {
+          if (error) throw error;
+          return data;
+        })
+      ]);
 
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-
-      if (data) {
-        setProfile(data);
-        setProfileData({
-          full_name: data.full_name || '',
-          first_name: data.first_name || '',
-          last_name: data.last_name || '',
-          middle_initial: data.middle_initial || '',
-          phone: data.phone || '',
-          avatar_url: data.avatar_url || ''
+      if (profileData) {
+        updateState({
+          profile: profileData,
+          profileData: { full_name: profileData.full_name || '', first_name: profileData.first_name || '', last_name: profileData.last_name || '', middle_initial: profileData.middle_initial || '', phone: profileData.phone || '', avatar_url: profileData.avatar_url || '' },
+          bookings: bookingsData,
+          filteredBookings: bookingsData,
+          feedbackSubmitted: new Set(feedbackData.map(f => f.booking_id))
         });
       } else {
         await createProfile(userId);
       }
     } catch (err) {
-      setErrorMessage("Error fetching profile: " + err.message);
-      setShowErrorModal(true);
+      updateState({ messages: { ...state.messages, error: `Error loading data: ${err.message}` }, modals: { ...state.modals, error: true } });
     } finally {
-      setLoadingProfile(false);
+      updateState({ loading: false });
     }
   };
+
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+      } catch {}
+    };
+    getUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) loadData(session.user.id);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadData(user.id);
+    } else {
+      window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }));
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Real-time subscription for bookings
+    const subscription = supabase
+      .channel('profile-bookings-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `user_id=eq.${user.id}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          // Reload to add new booking
+          loadData(user.id);
+        } else if (payload.eventType === 'UPDATE') {
+          // Update local state
+          const updatedBooking = { ...payload.new, tours: payload.new.tours || {}, profiles: payload.new.profiles || {} };
+          updateState(prev => ({
+            bookings: prev.bookings.map(b => b.id === payload.new.id ? updatedBooking : b),
+            filteredBookings: prev.filteredBookings.map(b => b.id === payload.new.id ? updatedBooking : b),
+            // Check for cancellation rejection
+            bookingFlags: {
+              ...prev.bookingFlags,
+              ...(payload.old.status === 'cancel-requested' && payload.new.status === 'pending' ? { [payload.new.id]: { type: 'rejected' } } : {})
+            }
+          }));
+        } else if (payload.eventType === 'DELETE') {
+          updateState(prev => ({
+            bookings: prev.bookings.filter(b => b.id !== payload.old.id),
+            filteredBookings: prev.filteredBookings.filter(b => b.id !== payload.old.id)
+          }));
+        }
+      })
+      .subscribe();
+
+    return () => { subscription.unsubscribe(); };
+  }, [user]);
 
   const createProfile = async (userId) => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert([{
-          id: userId,
-          email: user.email,
-          full_name: user.user_metadata?.full_name || '',
-          first_name: user.user_metadata?.first_name || '',
-          last_name: user.user_metadata?.last_name || ''
-        }])
-        .select()
-        .single();
-
+      const { data, error } = await supabase.from('profiles').insert([{ id: userId, email: user.email, full_name: user.user_metadata?.full_name || '', first_name: user.user_metadata?.first_name || '', last_name: user.user_metadata?.last_name || '' }]).select().single();
       if (error) throw error;
-      setProfile(data);
+      updateState({ profile: data });
     } catch (err) {
-      setErrorMessage("Error creating profile: " + err.message);
-      setShowErrorModal(true);
+      updateState({ messages: { ...state.messages, error: `Error creating profile: ${err.message}` }, modals: { ...state.modals, error: true } });
     }
-  };
-
-  const fetchFeedbackStatus = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('feedback')
-        .select('booking_id')
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-      const submittedBookingIds = new Set(data.map(f => f.booking_id));
-      setFeedbackSubmitted(submittedBookingIds);
-    } catch (err) {
-      setErrorMessage("Error fetching feedback status: " + err.message);
-      setShowErrorModal(true);
-    }
-  };
-
-  const handleLogoutClick = () => {
-    setShowLogoutModal(true);
   };
 
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      setUser(null);
-      setProfile(null);
-      setShowLogoutModal(false);
-      setSuccessMessage("Logged out successfully");
-      setShowSuccessModal(true);
+      updateState({ modals: { ...state.modals, logout: false, success: true }, messages: { ...state.messages, success: "Logged out successfully" } });
       navigate("/");
     } catch (err) {
-      setErrorMessage("Error logging out: " + err.message);
-      setShowErrorModal(true);
+      updateState({ messages: { ...state.messages, error: `Error logging out: ${err.message}` }, modals: { ...state.modals, error: true } });
     }
   };
 
   const handleProfileUpdate = async () => {
     try {
-      setUpdatingProfile(true);
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: profileData.full_name,
-          first_name: profileData.first_name,
-          last_name: profileData.last_name,
-          middle_initial: profileData.middle_initial,
-          phone: profileData.phone,
-          avatar_url: profileData.avatar_url,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
+      updateState({ updating: { ...state.updating, profile: true } });
+      const { error } = await supabase.from('profiles').update({ ...state.profileData, updated_at: new Date().toISOString() }).eq('id', user.id);
       if (error) throw error;
-      
-      setSuccessMessage("Profile updated successfully!");
-      setShowSuccessModal(true);
-      setIsEditingProfile(false);
-      fetchProfile(user.id);
+      updateState({ modals: { ...state.modals, success: true }, messages: { ...state.messages, success: "Profile updated successfully!" }, isEditingProfile: false });
+      loadData(user.id);
     } catch (err) {
-      setErrorMessage("Error updating profile: " + err.message);
-      setShowErrorModal(true);
+      updateState({ messages: { ...state.messages, error: `Error updating profile: ${err.message}` }, modals: { ...state.modals, error: true } });
     } finally {
-      setUpdatingProfile(false);
+      updateState({ updating: { ...state.updating, profile: false } });
     }
   };
 
   const handlePasswordChange = async () => {
-    setPasswordError('');
-    
-    if (!passwordData.oldPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
-      setPasswordError("All password fields are required");
+    const { oldPassword, newPassword, confirmPassword } = state.passwordData;
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      updateState({ passwordError: "All password fields are required" });
       return;
     }
-
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setPasswordError("New password and confirmation do not match");
+    if (newPassword !== confirmPassword) {
+      updateState({ passwordError: "New password and confirmation do not match" });
       return;
     }
-
-    if (passwordData.newPassword.length < 6) {
-      setPasswordError("New password must be at least 6 characters long");
+    if (newPassword.length < 6) {
+      updateState({ passwordError: "New password must be at least 6 characters long" });
       return;
     }
-
     try {
-      setUpdatingPassword(true);
-      
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: passwordData.oldPassword
-      });
-
-      if (signInError) {
-        throw new Error("Incorrect old password");
-      }
-
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: passwordData.newPassword
-      });
-
+      updateState({ updating: { ...state.updating, password: true } });
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: user.email, password: oldPassword });
+      if (signInError) throw new Error("Incorrect old password");
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
       if (updateError) throw updateError;
-
-      setSuccessMessage("Password updated successfully!");
-      setShowSuccessModal(true);
-      setPasswordData({
-        oldPassword: '',
-        newPassword: '',
-        confirmPassword: ''
-      });
-      setIsEditingProfile(false);
+      updateState({ modals: { ...state.modals, success: true }, messages: { ...state.messages, success: "Password updated successfully!" }, passwordData: { oldPassword: '', newPassword: '', confirmPassword: '' }, isChangingPassword: false, passwordError: '' });
     } catch (err) {
-      setPasswordError(err.message || "Error updating password");
-      setShowErrorModal(true);
+      updateState({ passwordError: err.message || "Error updating password", modals: { ...state.modals, error: true } });
     } finally {
-      setUpdatingPassword(false);
+      updateState({ updating: { ...state.updating, password: false } });
     }
-  };
-
-  const handleCancelRequestClick = (bookingId) => {
-    setCancelRequestBookingId(bookingId);
-    setShowCancelRequestModal(true);
   };
 
   const handleCancelRequest = async (bookingId) => {
     try {
-      setRequestingCancel(bookingId);
-      const { data: booking, error: fetchError } = await supabase
+      updateState({ requestingCancel: bookingId });
+
+      // First, update the booking status in the database
+      const { error: updateError } = await supabase
         .from("bookings")
-        .select("id, user_id, status")
-        .eq("id", bookingId)
-        .single();
-
-      if (fetchError || !booking) {
-        throw new Error("Booking not found or inaccessible");
-      }
-
-      if (booking.user_id !== user.id) {
-        throw new Error("You are not authorized to cancel this booking");
-      }
-
-      if (!['pending', 'confirmed'].includes(booking.status)) {
-        throw new Error(`Cannot request cancellation for booking with status: ${booking.status}`);
-      }
-
-      const { error } = await supabase
-        .from("bookings")
-        .update({
-          status: 'cancel-requested'
-        })
+        .update({ status: "cancel-requested" })
         .eq("id", bookingId);
 
-      if (error) throw error;
+      if (updateError) throw new Error(`Failed to update booking status: ${updateError.message}`);
 
-      setSuccessMessage("Cancellation request submitted successfully");
-      setShowSuccessModal(true);
-      setShowCancelRequestModal(false);
-      fetchBookings();
-    } catch (err) {
-      setErrorMessage(`Error submitting cancellation request: ${err.message}`);
-      setShowErrorModal(true);
+      // Then send the email notification
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-booking-email`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ bookingId, status: "cancel-requested" })
+        }
+      );
+
+      if (!response.ok) {
+        // Even if email fails, the status was updated
+        console.error("Email sending failed:", await response.text());
+      }
+
+      // Update local state to reflect the change
+      const booking = state.bookings.find(b => b.id === bookingId);
+      const tourTitle = booking?.tours?.title || 'your booking';
+      
+      updateState({ 
+        bookings: state.bookings.map(b => 
+          b.id === bookingId ? { ...b, status: 'cancel-requested' } : b
+        ),
+        filteredBookings: state.filteredBookings.map(b => 
+          b.id === bookingId ? { ...b, status: 'cancel-requested' } : b
+        ),
+        modals: { ...state.modals, success: true, cancelConfirm: false },
+        messages: { ...state.messages, success: `Cancellation request for "${tourTitle}" has been submitted successfully! We'll review your request and get back to you soon.` },
+        cancelBookingId: null
+      });
+
+    } catch (error) {
+      updateState({ 
+        messages: { ...state.messages, error: error.message || "Error submitting cancellation request" },
+        modals: { ...state.modals, error: true, cancelConfirm: false },
+        cancelBookingId: null
+      });
     } finally {
-      setRequestingCancel(null);
+      updateState({ requestingCancel: null });
     }
-  };
-
-  const handleFeedbackClick = (bookingId) => {
-    setFeedbackBookingId(bookingId);
-    setFeedbackData({ rating: 0, comments: '' });
-    setShowFeedbackModal(true);
   };
 
   const handleFeedbackSubmit = async () => {
-    if (feedbackData.rating === 0) {
-      setErrorMessage("Please provide a rating");
-      setShowErrorModal(true);
+    if (state.feedbackData.rating === 0) {
+      updateState({ messages: { ...state.messages, error: "Please provide a rating" }, modals: { ...state.modals, error: true } });
       return;
     }
-
     try {
-      // Check if feedback already exists for this booking
-      const { data: existingFeedback, error: checkError } = await supabase
-        .from('feedback')
-        .select('id')
-        .eq('booking_id', feedbackBookingId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') {
-        throw checkError;
-      }
-
+      const { data: existingFeedback, error: checkError } = await supabase.from('feedback').select('id').eq('booking_id', state.feedbackBookingId).eq('user_id', user.id).single();
+      if (checkError && checkError.code !== 'PGRST116') throw checkError;
       if (existingFeedback) {
-        setErrorMessage("Feedback has already been submitted for this booking");
-        setShowErrorModal(true);
-        setShowFeedbackModal(false);
+        updateState({ messages: { ...state.messages, error: "Feedback has already been submitted for this booking" }, modals: { ...state.modals, error: true, feedback: false } });
         return;
       }
-
-      // Insert feedback into Supabase
-      const { error } = await supabase
-        .from('feedback')
-        .insert([{
-          user_id: user.id,
-          booking_id: feedbackBookingId,
-          tour_id: bookings.find(b => b.id === feedbackBookingId)?.tour_id,
-          rating: feedbackData.rating,
-          comments: feedbackData.comments || null,
-          created_at: new Date().toISOString()
-        }]);
-
+      const { error } = await supabase.from('feedback').insert([{ user_id: user.id, booking_id: state.feedbackBookingId, tour_id: state.bookings.find(b => b.id === state.feedbackBookingId)?.tour_id, rating: state.feedbackData.rating, comments: state.feedbackData.comments || null, created_at: new Date().toISOString() }]);
       if (error) throw error;
-
-      setFeedbackSubmitted(prev => new Set([...prev, feedbackBookingId]));
-      setSuccessMessage("Feedback submitted successfully!");
-      setShowSuccessModal(true);
-      setShowFeedbackModal(false);
-      setFeedbackData({ rating: 0, comments: '' });
+      updateState({ feedbackSubmitted: new Set([...state.feedbackSubmitted, state.feedbackBookingId]), modals: { ...state.modals, success: true, feedback: false }, messages: { ...state.messages, success: "Feedback submitted successfully!" }, feedbackData: { rating: 0, comments: '' } });
     } catch (err) {
-      setErrorMessage("Error submitting feedback: " + err.message);
-      setShowErrorModal(true);
+      updateState({ messages: { ...state.messages, error: `Error submitting feedback: ${err.message}` }, modals: { ...state.modals, error: true } });
     }
   };
 
-  const fetchBookings = async () => {
-    try {
-      setLoadingBookings(true);
-      const { data, error } = await supabase
-        .from("bookings")
-        .select(`
-          id,
-          created_at,
-          booking_date,
-          number_of_people,
-          total_price,
-          status,
-          special_requests,
-          contact_email,
-          tour_id,
-          tours ( title, duration, image, price ),
-          profiles ( full_name )
-        `)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setBookings(data || []);
-    } catch (err) {
-      setErrorMessage("Error fetching bookings: " + err.message);
-      setShowErrorModal(true);
-    } finally {
-      setLoadingBookings(false);
-    }
+  const handleSearch = (e) => {
+    const query = e.target.value.toLowerCase();
+    const filtered = state.bookings.filter(booking => booking.tours?.title.toLowerCase().includes(query) || booking.contact_email?.toLowerCase().includes(query) || booking.profiles?.full_name.toLowerCase().includes(query));
+    updateState({ searchQuery: query, filteredBookings: filtered });
   };
 
   const getFilteredBookings = () => {
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-
-    switch (activeTab) {
-      case 'status':
-        return bookings.filter(
-          (booking) =>
-            (booking.status === 'pending' || booking.status === 'confirmed') &&
-            booking.booking_date >= today
-        );
-      case 'history':
-        return bookings.filter(
-          (booking) =>
-            booking.status === 'completed' ||
-            (booking.status === 'confirmed' && booking.booking_date < today)
-        );
-      case 'cancellations':
-        return bookings.filter(
-          (booking) =>
-            booking.status === 'cancel-requested' || booking.status === 'cancelled'
-        );
-      default:
-        return bookings;
-    }
+    const now = new Date().toISOString().split('T')[0];
+    return { all: state.filteredBookings, status: state.filteredBookings.filter(b => ['pending', 'confirmed'].includes(b.status) && b.booking_date >= now), completed: state.filteredBookings.filter(b => b.status === 'completed' || (b.status === 'confirmed' && b.booking_date < now)), history: state.filteredBookings.filter(b => b.status === 'completed' || (b.status === 'confirmed' && b.booking_date < now)), cancellations: state.filteredBookings.filter(b => ['cancel-requested', 'cancelled'].includes(b.status)) }[state.activeTab] || state.filteredBookings;
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'confirmed': return 'text-green-600 bg-green-100 border-green-200';
-      case 'pending': return 'text-yellow-600 bg-yellow-100 border-yellow-200';
-      case 'cancel-requested': return 'text-orange-600 bg-orange-100 border-orange-200';
-      case 'cancelled': return 'text-red-600 bg-red-100 border-red-200';
-      case 'completed': return 'text-blue-600 bg-blue-100 border-blue-200';
-      default: return 'text-gray-600 bg-gray-100 border-gray-200';
-    }
+  const statusConfig = {
+    confirmed: { color: 'text-green-600 bg-green-100 border-green-200', icon: <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /> },
+    pending: { color: 'text-yellow-600 bg-yellow-100 border-yellow-200', icon: <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /> },
+    'cancel-requested': { color: 'text-orange-600 bg-orange-100 border-orange-200', icon: <path fillRule="evenodd" d="M9 12l2 2 4-4m-6 8a9 9 0 100-18 9 9 0 000 18z" clipRule="evenodd" /> },
+    cancelled: { color: 'text-red-600 bg-red-100 border-red-200', icon: <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /> },
+    completed: { color: 'text-blue-600 bg-blue-100 border-blue-200', icon: <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /> }
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'confirmed':
-        return (
-          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-        );
-      case 'pending':
-        return (
-          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-          </svg>
-        );
-      case 'cancel-requested':
-        return (
-          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M9 12l2 2 4-4m-6 8a9 9 0 100-18 9 9 0 000 18z" clipRule="evenodd" />
-          </svg>
-        );
-      case 'cancelled':
-        return (
-          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-          </svg>
-        );
-      case 'completed':
-        return (
-          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
+  const formatDate = (dateString) => new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   const getBookingStats = () => {
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-
-    return {
-      status: bookings.filter(
-        (b) => (b.status === 'pending' || b.status === 'confirmed') && b.booking_date >= today
-      ).length,
-      history: bookings.filter(
-        (b) => b.status === 'completed' || (b.status === 'confirmed' && b.booking_date < today)
-      ).length,
-      cancellations: bookings.filter(
-        (b) => b.status === 'cancel-requested' || b.status === 'cancelled'
-      ).length,
-    };
+    const now = new Date().toISOString().split('T')[0];
+    return { all: state.filteredBookings.length, status: state.filteredBookings.filter(b => ['pending', 'confirmed'].includes(b.status) && b.booking_date >= now).length, completed: state.filteredBookings.filter(b => b.status === 'completed' || (b.status === 'confirmed' && b.booking_date < now)).length, history: state.filteredBookings.filter(b => b.status === 'completed' || (b.status === 'confirmed' && b.booking_date < now)).length, cancellations: state.filteredBookings.filter(b => ['cancel-requested', 'cancelled'].includes(b.status)).length };
   };
 
-  if (loadingUser || loadingProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-600"></div>
+  const Modal = ({ show, setShow, title, children, footer }) => show && (
+    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
+      <div className="bg-white bg-opacity-90 backdrop-blur-md rounded-2xl max-w-md w-full shadow-xl border border-gray-100/50">
+        <div className="flex justify-between items-center p-6">
+          <h2 className="text-2xl font-semibold text-gray-900">{title}</h2>
+          <button onClick={() => setShow(false)} className="text-gray-600 hover:text-gray-800 text-xl transition-colors" aria-label="Close">×</button>
+        </div>
+        <div className="p-6">{children}</div>
+        {footer && <div className="p-6 flex justify-end space-x-4">{footer}</div>}
       </div>
-    );
-  }
+    </div>
+  );
+
+  const InputField = ({ label, type = "text", value, onChange, maxLength, placeholder }) => (
+    <div className="relative">
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input type={type} value={value} onChange={onChange} maxLength={maxLength} placeholder={placeholder} className="w-full px-4 py-2.5 bg-white bg-opacity-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 placeholder-gray-400" />
+    </div>
+  );
+
+  if (state.loading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><FaSpinner className="animate-spin h-12 w-12 text-blue-600" /></div>;
 
   if (!user) {
     return (
       <>
-        <Navbar
-          user={user}
-          onLogout={handleLogoutClick}
-          onLoginClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))}
-          onSignupClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: false } }))}
-          onChatbotClick={() => setIsChatbotOpen(!isChatbotOpen)}
-        />
-        <Chatbot user={user} isOpen={isChatbotOpen} setIsOpen={setIsChatbotOpen} />
-        <button
-          onClick={() => setIsChatbotOpen(!isChatbotOpen)}
-          className="fixed bottom-4 right-4 bg-[#00355f] text-white p-4 rounded-full shadow-lg hover:bg-[#E91E63] transition-colors z-40"
-        >
-          <FaRobot size={24} />
-        </button>
+        <Navbar user={user} onLogout={() => updateState({ modals: { ...state.modals, logout: true } })} onLoginClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))} onSignupClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: false } }))} onChatbotClick={() => updateState({ isChatbotOpen: !state.isChatbotOpen })} />
+        <Chatbot user={user} isOpen={state.isChatbotOpen} setIsOpen={(val) => updateState({ isChatbotOpen: val })} />
+        <button onClick={() => updateState({ isChatbotOpen: !state.isChatbotOpen })} className="fixed bottom-4 right-4 bg-[#00355f] text-white p-4 rounded-full shadow-lg hover:bg-[#E91E63] transition-colors z-40"><FaRobot size={24} /></button>
         <div className="min-h-screen flex items-center justify-center bg-gray-100">
-          <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
+          <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-md">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Access Required</h2>
             <p className="text-gray-600 mb-6">Please log in to view your profile.</p>
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))}
-              className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 transition duration-300"
-            >
-              Log In
-            </button>
+            <button onClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))} className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 transition duration-300">Log In</button>
           </div>
         </div>
       </>
@@ -539,404 +334,180 @@ function Profile() {
   }
 
   const stats = getBookingStats();
-  const displayName = profileData.full_name || `${profileData.first_name} ${profileData.last_name}`.trim() || 'User';
+  const displayName = state.profileData.full_name || `${state.profileData.first_name} ${state.profileData.last_name}`.trim() || 'User';
+
+  const statCards = [
+    { icon: <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />, label: 'Current Bookings', value: stats.status, color: 'blue' },
+    { icon: <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />, label: 'Completed', value: stats.completed, color: 'green' },
+    { icon: <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />, label: 'Cancellations', value: stats.cancellations, color: 'red' }
+  ];
+
+  const profileFields = [
+    { label: 'Email', value: user.email },
+    { label: 'Phone', value: state.profileData.phone || 'Not provided' },
+    { label: 'First Name', value: state.profileData.first_name || 'Not provided' },
+    { label: 'Last Name', value: state.profileData.last_name || 'Not provided' },
+    { label: 'Middle Initial', value: state.profileData.middle_initial || 'Not provided' },
+    { label: 'Member Since', value: state.profile?.created_at ? formatDate(state.profile.created_at) : 'Unknown' }
+  ];
+
+  const editFields = [
+    { label: 'User name', key: 'full_name', type: 'text', placeholder: 'Enter your full name' },
+    { label: 'Phone Number', key: 'phone', type: 'tel', placeholder: 'Enter your phone number' },
+    { label: 'First Name', key: 'first_name', type: 'text', placeholder: 'Enter your first name' },
+    { label: 'Last Name', key: 'last_name', type: 'text', placeholder: 'Enter your last name' },
+    { label: 'Middle Initial', key: 'middle_initial', type: 'text', maxLength: 1, placeholder: 'Enter middle initial' },
+    { label: 'Avatar URL', key: 'avatar_url', type: 'url', placeholder: 'Enter avatar URL' }
+  ];
+
+  const passwordFields = [
+    { label: 'Current Password', key: 'oldPassword', placeholder: 'Enter current password' },
+    { label: 'New Password', key: 'newPassword', placeholder: 'Enter new password' },
+    { label: 'Confirm New Password', key: 'confirmPassword', placeholder: 'Confirm new password' }
+  ];
+
+  const tabs = [
+    { key: 'all', label: `All (${stats.all})` },
+    { key: 'status', label: `Current (${stats.status})` },
+    { key: 'completed', label: `Completed (${stats.completed})` },
+    { key: 'cancellations', label: `Cancellations (${stats.cancellations})` }
+  ];
+
+  const statusGuide = [
+    { status: 'pending', label: 'Pending', desc: 'Awaiting confirmation (or after cancellation declined)', color: 'yellow' },
+    { status: 'confirmed', label: 'Confirmed', desc: 'Booking confirmed & ready', color: 'green' },
+    { status: 'cancel-requested', label: 'Cancel Requested', desc: 'Awaiting cancellation approval', color: 'orange' },
+    { status: 'cancelled', label: 'Cancelled', desc: 'Cancellation approved', color: 'red' }
+  ];
 
   return (
     <>
-      <Navbar
-        user={user}
-        onLogout={handleLogoutClick}
-        onLoginClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))}
-        onSignupClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: false } }))}
-        onChatbotClick={() => setIsChatbotOpen(!isChatbotOpen)}
-      />
-      <Chatbot user={user} isOpen={isChatbotOpen} setIsOpen={setIsChatbotOpen} />
-      <button
-        onClick={() => setIsChatbotOpen(!isChatbotOpen)}
-        className="fixed bottom-4 right-4 bg-[#00355f] text-white p-4 rounded-full shadow-lg hover:bg-[#E91E63] transition-colors z-40"
-      >
-        <FaRobot size={24} />
-      </button>
+      <Navbar user={user} onLogout={() => updateState({ modals: { ...state.modals, logout: true } })} onLoginClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: true } }))} onSignupClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { isLogin: false } }))} onChatbotClick={() => updateState({ isChatbotOpen: !state.isChatbotOpen })} />
+      <Chatbot user={user} isOpen={state.isChatbotOpen} setIsOpen={(val) => updateState({ isChatbotOpen: val })} />
+      <button onClick={() => updateState({ isChatbotOpen: !state.isChatbotOpen })} className="fixed bottom-4 right-4 bg-[#00355f] text-white p-4 rounded-full shadow-lg hover:bg-[#E91E63] transition-colors z-40"><FaRobot size={24} /></button>
 
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
             <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-              <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-4xl font-bold overflow-hidden">
-                {profileData.avatar_url ? (
-                  <img 
-                    src={profileData.avatar_url} 
-                    alt="Profile" 
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  displayName.charAt(0).toUpperCase()
-                )}
+              <div className="relative w-32 h-32 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-4xl font-bold overflow-hidden ring-4 ring-blue-100">
+                {state.profileData.avatar_url ? <img src={state.profileData.avatar_url} alt="Profile" className="w-full h-full object-cover" /> : displayName.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 text-center md:text-left">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                  {displayName}
-                </h1>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">{displayName}</h1>
                 <p className="text-gray-600 mb-2">{user.email}</p>
-                {profile?.role && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mb-4">
-                    {profile.role}
-                  </span>
-                )}
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button
-  onClick={() => setIsEditingProfile(!isEditingProfile)}
-  className="text-white px-6 py-2 rounded-full hover:bg-blue-800 transition duration-300 flex items-center justify-center gap-2"
-  style={{ backgroundColor: '#00355f' }}
->
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-    />
-  </svg>
-  Edit Profile
-</button>
+                {state.profile?.role && <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 mb-4">{state.profile.role}</span>}
+                <div className="flex gap-4">
+                  <button onClick={() => updateState({ isEditingProfile: true })} className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 transition duration-300 flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    Edit Profile
+                  </button>
+                  <button onClick={() => updateState({ isChangingPassword: true })} className="bg-gray-600 text-white px-6 py-2 rounded-full hover:bg-gray-700 transition duration-300">Change Password</button>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-blue-100 rounded-md flex items-center justify-center">
-                    <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                    </svg>
+            {statCards.map(({ icon, label, value, color }, i) => (
+              <div key={i} className="bg-white rounded-lg shadow p-6 transform hover:scale-105 transition-transform duration-200">
+                <div className="flex items-center">
+                  <div className={`w-10 h-10 bg-${color}-100 rounded-md flex items-center justify-center`}>
+                    <svg className={`w-5 h-5 text-${color}-600`} fill="currentColor" viewBox="0 0 20 20">{icon}</svg>
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-500">{label}</p>
+                    <p className="text-2xl font-semibold text-gray-900">{value}</p>
                   </div>
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Current Bookings</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.status}</p>
-                </div>
               </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-green-100 rounded-md flex items-center justify-center">
-                    <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Completed</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.history}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-red-100 rounded-md flex items-center justify-center">
-                    <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Cancellations</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.cancellations}</p>
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
 
-          {isEditingProfile && (
-            <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Edit Profile Information</h2>
+          <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
+            <h2 className="text-2xl font-semibold text-gray-800 mb-6">Profile Information</h2>
+            {state.loading ? (
+              <div className="animate-pulse space-y-4">
+                <div className="h-6 w-40 bg-gray-200 rounded"></div>
+                <div className="h-4 w-60 bg-gray-100 rounded"></div>
+              </div>
+            ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">User name</label>
-                  <input
-                    type="text"
-                    value={profileData.full_name}
-                    onChange={(e) => setProfileData({...profileData, full_name: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-                  <input
-                    type="tel"
-                    value={profileData.phone}
-                    onChange={(e) => setProfileData({...profileData, phone: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
-                  <input
-                    type="text"
-                    value={profileData.first_name}
-                    onChange={(e) => setProfileData({...profileData, first_name: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
-                  <input
-                    type="text"
-                    value={profileData.last_name}
-                    onChange={(e) => setProfileData({...profileData, last_name: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Middle Initial</label>
-                  <input
-                    type="text"
-                    maxLength="1"
-                    value={profileData.middle_initial}
-                    onChange={(e) => setProfileData({...profileData, middle_initial: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Avatar URL</label>
-                  <input
-                    type="url"
-                    value={profileData.avatar_url}
-                    onChange={(e) => setProfileData({...profileData, avatar_url: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Change Password</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
-                      <input
-                        type="password"
-                        value={passwordData.oldPassword}
-                        onChange={(e) => setPasswordData({...passwordData, oldPassword: e.target.value})}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
-                      <input
-                        type="password"
-                        value={passwordData.newPassword}
-                        onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
-                      <input
-                        type="password"
-                        value={passwordData.confirmPassword}
-                        onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
+                {profileFields.map(({ label, value }, i) => (
+                  <div key={i} className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-600 font-medium">{label}</p>
+                    <p className="text-gray-900">{value}</p>
                   </div>
-                  {passwordError && (
-                    <p className="text-red-500 text-sm mt-2">{passwordError}</p>
-                  )}
-                </div>
+                ))}
               </div>
-              <div className="flex gap-4 mt-6">
-                <button
-                  onClick={handleProfileUpdate}
-                  disabled={updatingProfile}
-                  className="bg-green-600 text-white px-6 py-2 rounded-full hover:bg-green-700 transition duration-300 disabled:opacity-50"
-                  style={{ backgroundColor: '#00355f' }}
-                >
-                  {updatingProfile ? 'Updating...' : 'Save Profile'}
-                </button>
-                <button
-                  onClick={handlePasswordChange}
-                  disabled={updatingPassword}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 transition duration-300 disabled:opacity-50"
-                  style={{ backgroundColor: '#00355f' }}
-                >
-                  {updatingPassword ? 'Updating...' : 'Change Password'}
-                </button>
-                <button
-                  onClick={() => {
-                    setIsEditingProfile(false);
-                    setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
-                    setPasswordError('');
-                  }}
-                  className="bg-gray-500 text-white px-6 py-2 rounded-full hover:bg-gray-600 transition duration-300"
-                  style={{ backgroundColor: '#c41a1aff' }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!isEditingProfile && (
-            <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Profile Information</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <p className="text-gray-700"><span className="font-medium">Email:</span> {user.email}</p>
-                </div>
-                <div>
-                  <p className="text-gray-700"><span className="font-medium">Phone:</span> {profileData.phone || 'Not provided'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-700"><span className="font-medium">First Name:</span> {profileData.first_name || 'Not provided'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-700"><span className="font-medium">Last Name:</span> {profileData.last_name || 'Not provided'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-700"><span className="font-medium">Middle Initial:</span> {profileData.middle_initial || 'Not provided'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-700"><span className="font-medium">Member Since:</span> {profile?.created_at ? formatDate(profile.created_at) : 'Unknown'}</p>
-                </div>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="bg-white rounded-2xl shadow-xl p-8">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
               <h2 className="text-2xl font-semibold text-gray-800">My Bookings</h2>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search bookings..."
-                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
-                  />
-                  <svg className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+              <div className="flex items-center gap-4 w-full md:w-auto">
+                <div className="relative flex-1 md:flex-none">
+                  <input type="text" placeholder="Search bookings by tour, email, or name..." value={state.searchQuery} onChange={handleSearch} className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64" />
+                  <svg className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 </div>
-                <div className="text-sm text-gray-600">
-                  Total Bookings: {bookings.length}
-                </div>
+                <div className="text-sm text-gray-600">Total: {state.filteredBookings.length}</div>
               </div>
             </div>
 
             <div className="flex border-b border-gray-200 mb-6 overflow-x-auto">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'all'
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                All ({stats.all})
-              </button>
-              <button
-                onClick={() => setActiveTab('status')}
-                className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'status'
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Status ({stats.status})
-              </button>
-              <button
-                onClick={() => setActiveTab('completed')}
-                className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'completed'
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Completed ({stats.completed})
-              </button>
-              <button
-                onClick={() => setActiveTab('cancellations')}
-                className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${
-                  activeTab === 'cancellations'
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Cancellations ({stats.cancellations})
-              </button>
+              {tabs.map(({ key, label }) => (
+                <button key={key} onClick={() => updateState({ activeTab: key })} className={`px-6 py-3 font-medium text-sm transition duration-300 whitespace-nowrap ${state.activeTab === key ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>{label}</button>
+              ))}
             </div>
 
-            {loadingBookings ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-blue-600"></div>
-              </div>
+            {state.loading ? (
+              <div className="flex justify-center py-8"><FaSpinner className="animate-spin h-8 w-8 text-blue-600" /></div>
             ) : getFilteredBookings().length === 0 ? (
               <div className="text-center py-12">
-                <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <p className="text-gray-600">
-                  {activeTab === 'all' && 'No bookings found.'}
-                  {activeTab === 'status' && 'No current bookings found.'}
-                  {activeTab === 'completed' && 'No completed bookings found.'}
-                  {activeTab === 'cancellations' && 'No cancellations or cancel requests found.'}
-                </p>
+                <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                <p className="text-gray-600">{state.activeTab === 'all' ? 'No bookings found.' : state.activeTab === 'status' ? 'No current bookings found.' : state.activeTab === 'completed' ? 'No completed bookings found.' : 'No cancellations or cancel requests found.'}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-gray-50">
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tour</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booking Info</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      {['Tour', 'Booking Info', 'Status', 'Total', 'Actions'].map((header, i) => (
+                        <th key={i} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{header}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {getFilteredBookings().map((booking) => {
                       const isPastDate = new Date(booking.booking_date) < new Date();
-                      const canRequestCancel = (booking.status === 'confirmed' || booking.status === 'pending') && !isPastDate;
                       const isCompleted = booking.status === 'completed' || (booking.status === 'confirmed' && isPastDate);
+                      const config = statusConfig[booking.status] || { color: 'text-gray-600 bg-gray-100 border-gray-200', icon: null };
+                      const isRejection = state.bookingFlags[booking.id]?.type === 'rejected';
 
                       return (
                         <tr key={booking.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4">
                             <div className="flex items-center">
-                              {booking.tours?.image && (
-                                <img
-                                  src={booking.tours.image}
-                                  alt={booking.tours.title}
-                                  className="w-16 h-16 object-cover rounded-lg mr-4"
-                                />
-                              )}
+                              {booking.tours?.image && <img src={booking.tours.image} alt={booking.tours.title} className="w-16 h-16 object-cover rounded-lg mr-4" />}
                               <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {booking.tours?.title || 'Tour Details Unavailable'}
-                                </div>
-                                <div className="text-sm text-gray-500">
-                                  {booking.tours?.duration}
-                                </div>
+                                <div className="text-sm font-medium text-gray-900">{booking.tours?.title || 'Tour Details Unavailable'}</div>
+                                <div className="text-sm text-gray-500">{booking.tours?.duration}</div>
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm text-gray-900">
-                              <div className="mb-1"><span className="font-medium">Full Name:</span> {booking.profiles?.full_name || 'Not provided'}</div>
-                              <div className="mb-1"><span className="font-medium">Gmail:</span> {booking.contact_email || 'Not provided'}</div>
-                              <div className="mb-1"><span className="font-medium">Booked Tour:</span> {booking.tours?.title || 'Not provided'}</div>
-                              <div className="mb-1"><span className="font-medium">Date:</span> {formatDate(booking.booking_date)}</div>
-                              <div className="mb-1"><span className="font-medium">Booked Date:</span> {formatDate(booking.created_at)}</div>
-                              {booking.special_requests && (
-                                <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
-                                  <span className="font-medium">Notes:</span> {booking.special_requests}
-                                </div>
-                              )}
+                              {[
+                                { label: 'Full Name', value: booking.profiles?.full_name || 'Not provided' },
+                                { label: 'Gmail', value: booking.contact_email || 'Not provided' },
+                                { label: 'Booked Tour', value: booking.tours?.title || 'Not provided' },
+                                { label: 'Date', value: formatDate(booking.booking_date) },
+                                { label: 'Booked Date', value: formatDate(booking.created_at) }
+                              ].map(({ label, value }, i) => (
+                                <div key={i} className="mb-1"><span className="font-medium">{label}:</span> {value}</div>
+                              ))}
+                              {booking.special_requests && <div className="mt-2 p-2 bg-gray-50 rounded text-xs"><span className="font-medium">Notes:</span> {booking.special_requests}</div>}
                               {booking.status === 'confirmed' && (
                                 <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
                                   <div className="text-xs font-semibold text-green-800 mb-2">BOOKING CONFIRMED</div>
@@ -945,93 +516,45 @@ function Profile() {
                                     <div><span className="font-medium">Tour Price:</span> ₱{booking.tours?.price?.toLocaleString() || 'N/A'} per person</div>
                                     <div><span className="font-medium">Total Guests:</span> {booking.number_of_people}</div>
                                     <div><span className="font-medium">Final Amount:</span> ₱{booking.total_price.toLocaleString()}</div>
-                                    {booking.tours?.duration && (
-                                      <div><span className="font-medium">Duration:</span> {booking.tours.duration}</div>
-                                    )}
+                                    {booking.tours?.duration && <div><span className="font-medium">Duration:</span> {booking.tours.duration}</div>}
                                   </div>
                                 </div>
                               )}
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full border ${getStatusColor(booking.status)}`}>
-                              {getStatusIcon(booking.status)}
+                            <span className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full border ${config.color}`}>
+                              {config.icon && <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">{config.icon}</svg>}
                               {booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('-', ' ')}
                             </span>
-                            {booking.status === 'pending' && (
-                              <div className="mt-1 text-xs text-yellow-600">
-                                Awaiting confirmation
-                              </div>
-                            )}
-                            {booking.status === 'confirmed' && isPastDate && activeTab === 'completed' && (
-                              <div className="mt-1 text-xs text-blue-600">
-                                Tour Completed
-                              </div>
-                            )}
-                            {booking.status === 'confirmed' && !isPastDate && (
-                              <div className="mt-1 text-xs text-green-600">
-                                Ready for tour
-                              </div>
-                            )}
-                            {booking.status === 'cancel-requested' && (
-                              <div className="mt-1 text-xs text-orange-600">
-                                Cancellation requested on {formatDate(booking.created_at)}
-                              </div>
-                            )}
-                            {booking.status === 'cancelled' && (
-                              <div className="mt-1 text-xs text-red-600">
-                                Cancelled on {formatDate(booking.created_at)}
-                              </div>
-                            )}
+                            {booking.status === 'pending' && <div className="mt-1 text-xs text-yellow-600">Awaiting confirmation</div>}
+                            {booking.status === 'confirmed' && isPastDate && state.activeTab === 'completed' && <div className="mt-1 text-xs text-blue-600">Tour Completed</div>}
+                            {booking.status === 'confirmed' && !isPastDate && <div className="mt-1 text-xs text-green-600">Ready for tour</div>}
+                            {booking.status === 'cancel-requested' && <div className="mt-1 text-xs text-orange-600">Cancellation requested on {formatDate(booking.created_at)}</div>}
+                            {booking.status === 'cancelled' && <div className="mt-1 text-xs text-red-600">Cancellation approved on {formatDate(booking.created_at)}</div>}
+                            {isRejection && <div className="mt-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">Cancellation declined - Booking restored</div>}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-900 font-medium">
-                            ₱{booking.total_price.toLocaleString()}
-                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900 font-medium">₱{booking.total_price.toLocaleString()}</td>
                           <td className="px-6 py-4">
                             <div className="flex flex-col gap-2">
-                              {(activeTab === 'status' || activeTab === 'all') && canRequestCancel && (
-                                <button
-                                  onClick={() => handleCancelRequestClick(booking.id)}
-                                  disabled={requestingCancel === booking.id}
-                                  className="text-orange-600 hover:text-orange-800 text-sm font-medium disabled:opacity-50 transition duration-200"
-                                >
-                                  {requestingCancel === booking.id ? (
-                                    <span className="flex items-center">
-                                      <svg className="animate-spin -ml-1 mr-2 h-3 w-3" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                      </svg>
-                                      Requesting...
-                                    </span>
-                                  ) : 'Request Cancellation'}
+                              {(state.activeTab === 'status' || state.activeTab === 'all') && booking.status === 'pending' ? (
+                                <button onClick={() => handleCancelRequest(booking.id)} disabled={state.requestingCancel === booking.id} className="bg-orange-600 text-white px-4 py-1.5 rounded-lg hover:bg-orange-700 text-sm font-medium disabled:opacity-50 transition duration-200 flex items-center justify-center gap-2">
+                                  {state.requestingCancel === booking.id ? <><FaSpinner className="animate-spin h-4 w-4" /> Requesting...</> : 'Request Cancel'}
                                 </button>
-                              )}
-                              {(activeTab === 'completed' || activeTab === 'all') && isCompleted && (
-                                feedbackSubmitted.has(booking.id) ? (
+                              ) : booking.status === 'cancel-requested' ? (
+                                <span className="text-xs text-orange-500">Cancellation Pending</span>
+                              ) : null}
+                              {(state.activeTab === 'completed' || state.activeTab === 'all') && isCompleted && (
+                                state.feedbackSubmitted.has(booking.id) ? (
                                   <span className="text-xs text-gray-500">Feedback Submitted</span>
                                 ) : (
-                                  <button
-                                    onClick={() => handleFeedbackClick(booking.id)}
-                                    className="text-blue-600 hover:text-blue-800 text-sm font-medium transition duration-200"
-                                  >
-                                    Provide Feedback
-                                  </button>
+                                  <button onClick={() => updateState({ feedbackBookingId: booking.id, feedbackData: { rating: 0, comments: '' }, modals: { ...state.modals, feedback: true } })} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 text-sm font-medium transition duration-200">Provide Feedback</button>
                                 )
                               )}
-                              {booking.status === 'pending' && (activeTab === 'status' || activeTab === 'all') && (
-                                <div className="text-xs text-gray-500">
-                                  Contact support for changes
-                                </div>
-                              )}
-                              {!canRequestCancel && isPastDate && booking.status === 'confirmed' && (activeTab === 'status' || activeTab === 'all') && (
-                                <span className="text-xs text-gray-500">Tour completed</span>
-                              )}
-                              {booking.status === 'cancel-requested' && (
-                                <span className="text-xs text-orange-500">Awaiting approval</span>
-                              )}
-                              {booking.status === 'cancelled' && (
-                                <span className="text-xs text-red-500">Cancellation approved</span>
-                              )}
+                              {booking.status === 'confirmed' && (state.activeTab === 'status' || state.activeTab === 'all') && !isRejection && <div className="text-xs text-gray-500">Contact support for cancellation</div>}
+                              {isRejection && <div className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded">Cancellation declined</div>}
+                              {!isCompleted && booking.status === 'confirmed' && isPastDate && (state.activeTab === 'status' || state.activeTab === 'all') && <span className="text-xs text-gray-500">Tour completed</span>}
+                              {booking.status === 'cancelled' && <span className="text-xs text-red-500">Cancellation approved</span>}
                             </div>
                           </td>
                         </tr>
@@ -1045,287 +568,94 @@ function Profile() {
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="text-sm font-medium text-gray-800 mb-3">Booking Status Guide</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="flex items-center">
-                  <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-yellow-600 bg-yellow-100 border-yellow-200 mr-2">
-                    {getStatusIcon('pending')}
-                    Pending
-                  </span>
-                  <span className="text-xs text-gray-600">Awaiting confirmation</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-green-600 bg-green-100 border-green-200 mr-2">
-                    {getStatusIcon('confirmed')}
-                    Confirmed
-                  </span>
-                  <span className="text-xs text-gray-600">Booking confirmed & ready</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-orange-600 bg-orange-100 border-orange-200 mr-2">
-                    {getStatusIcon('cancel-requested')}
-                    Cancel Requested
-                  </span>
-                  <span className="text-xs text-gray-600">Awaiting cancellation approval</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border text-red-600 bg-red-100 border-red-200 mr-2">
-                    {getStatusIcon('cancelled')}
-                    Cancelled
-                  </span>
-                  <span className="text-xs text-gray-600">Cancellation approved</span>
-                </div>
+                {statusGuide.map(({ status, label, desc, color }, i) => (
+                  <div key={i} className="flex items-center">
+                    <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border text-${color}-600 bg-${color}-100 border-${color}-200 mr-2`}>
+                      {statusConfig[status]?.icon && <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">{statusConfig[status].icon}</svg>}
+                      {label}
+                    </span>
+                    <span className="text-xs text-gray-600">{desc}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <LogoutModal
-        showLogoutModal={showLogoutModal}
-        setShowLogoutModal={setShowLogoutModal}
-        handleLogout={handleLogout}
-      />
+      <Modal show={state.isEditingProfile} setShow={(val) => updateState({ isEditingProfile: val })} title="Edit Profile" children={
+        <div className="space-y-4">
+          <p className="text-gray-600 text-sm">Update your profile information below</p>
+          {editFields.map(({ label, key, type, maxLength, placeholder }, i) => (
+            <InputField key={i} label={label} type={type} value={state.profileData[key]} onChange={(e) => updateState({ profileData: { ...state.profileData, [key]: e.target.value } })} maxLength={maxLength} placeholder={placeholder} />
+          ))}
+        </div>
+      } footer={
+        <>
+          <button onClick={() => updateState({ isEditingProfile: false })} className="px-5 py-2.5 text-gray-600 bg-white bg-opacity-50 border border-gray-300 rounded-lg hover:bg-opacity-70 transition-all duration-200">Cancel</button>
+          <button onClick={handleProfileUpdate} disabled={state.updating.profile} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2">
+            {state.updating.profile && <FaSpinner className="animate-spin h-4 w-4" />}
+            {state.updating.profile ? 'Saving...' : 'Save Profile'}
+          </button>
+        </>
+      } />
 
-      <SuccessModal
-        showSuccessModal={showSuccessModal}
-        setShowSuccessModal={setShowSuccessModal}
-        message={successMessage}
-      />
+      <Modal show={state.isChangingPassword} setShow={(val) => updateState({ isChangingPassword: val })} title="Change Password" children={
+        <div className="space-y-4">
+          <p className="text-gray-600 text-sm">Enter your current and new password below</p>
+          {passwordFields.map(({ label, key, placeholder }, i) => (
+            <InputField key={i} label={label} type="password" value={state.passwordData[key]} onChange={(e) => updateState({ passwordData: { ...state.passwordData, [key]: e.target.value } })} placeholder={placeholder} />
+          ))}
+          {state.passwordError && <p className="text-red-500 text-sm bg-red-50 bg-opacity-50 p-2 rounded">{state.passwordError}</p>}
+        </div>
+      } footer={
+        <>
+          <button onClick={() => updateState({ isChangingPassword: false, passwordData: { oldPassword: '', newPassword: '', confirmPassword: '' }, passwordError: '' })} className="px-5 py-2.5 text-gray-600 bg-white bg-opacity-50 border border-gray-300 rounded-lg hover:bg-opacity-70 transition-all duration-200">Cancel</button>
+          <button onClick={handlePasswordChange} disabled={state.updating.password} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2">
+            {state.updating.password && <FaSpinner className="animate-spin h-4 w-4" />}
+            {state.updating.password ? 'Updating...' : 'Change Password'}
+          </button>
+        </>
+      } />
 
-      <ErrorModal
-        showErrorModal={showErrorModal}
-        setShowErrorModal={setShowErrorModal}
-        message={errorMessage}
-      />
+      <Modal show={state.modals.logout} setShow={(val) => updateState({ modals: { ...state.modals, logout: val } })} title="Confirm Logout" children={<p className="text-gray-600 mb-6">Are you sure you want to log out?</p>} footer={
+        <>
+          <button onClick={() => updateState({ modals: { ...state.modals, logout: false } })} className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">Cancel</button>
+          <button onClick={handleLogout} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Logout</button>
+        </>
+      } />
 
-      <ConfirmCancelRequestModal
-        showCancelRequestModal={showCancelRequestModal}
-        setShowCancelRequestModal={setShowCancelRequestModal}
-        handleCancelRequest={handleCancelRequest}
-        cancelRequestBookingId={cancelRequestBookingId}
-      />
+      <Modal show={state.modals.success} setShow={(val) => updateState({ modals: { ...state.modals, success: val } })} title="Success" children={<p className="text-gray-600 mb-6">{state.messages.success}</p>} footer={
+        <button onClick={() => updateState({ modals: { ...state.modals, success: false } })} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">OK</button>
+      } />
 
-      <FeedbackModal
-        showFeedbackModal={showFeedbackModal}
-        setShowFeedbackModal={setShowFeedbackModal}
-        feedbackData={feedbackData}
-        setFeedbackData={setFeedbackData}
-        handleFeedbackSubmit={handleFeedbackSubmit}
-        tourTitle={bookings.find(b => b.id === feedbackBookingId)?.tours?.title || 'Tour'}
-      />
+      <Modal show={state.modals.error} setShow={(val) => updateState({ modals: { ...state.modals, error: val } })} title="Error" children={<p className="text-gray-600 mb-6">{state.messages.error}</p>} footer={
+        <button onClick={() => updateState({ modals: { ...state.modals, error: false } })} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">OK</button>
+      } />
+
+      <Modal show={state.modals.feedback} setShow={(val) => updateState({ modals: { ...state.modals, feedback: val } })} title={`Feedback for ${state.bookings.find(b => b.id === state.feedbackBookingId)?.tours?.title || 'Tour'}`} children={
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Rating</label>
+            <div className="flex space-x-1">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <FaStar key={star} className={`h-6 w-6 cursor-pointer ${state.feedbackData.rating >= star ? 'text-yellow-400' : 'text-gray-300'}`} onClick={() => updateState({ feedbackData: { ...state.feedbackData, rating: star } })} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
+            <textarea value={state.feedbackData.comments} onChange={(e) => updateState({ feedbackData: { ...state.feedbackData, comments: e.target.value } })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200" rows="4" placeholder="Share your experience..." />
+          </div>
+        </div>
+      } footer={
+        <>
+          <button onClick={() => updateState({ modals: { ...state.modals, feedback: false } })} className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">Cancel</button>
+          <button onClick={handleFeedbackSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Submit Feedback</button>
+        </>
+      } />
     </>
   );
 }
-
-const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
-  if (!showLogoutModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-sm w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
-            Confirm Logout
-          </h2>
-          <button
-            onClick={() => setShowLogoutModal(false)}
-            className="text-gray-500 hover:text-gray-700 text-xl"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <p className="text-gray-600 mb-6">
-          Are you sure you want to log out?
-        </p>
-        <div className="flex justify-end space-x-4">
-          <button
-            onClick={() => setShowLogoutModal(false)}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium rounded-lg"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
-  if (!showSuccessModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-sm w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
-            Success
-          </h2>
-          <button
-            onClick={() => setShowSuccessModal(false)}
-            className="text-gray-500 hover:text-gray-700 text-xl"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <p className="text-gray-600 mb-6">
-          {message}
-        </p>
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowSuccessModal(false)}
-            className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
-  if (!showErrorModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-sm w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
-            Error
-          </h2>
-          <button
-            onClick={() => setShowErrorModal(false)}
-            className="text-gray-500 hover:text-gray-700 text-xl"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <p className="text-gray-600 mb-6">
-          {message}
-        </p>
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowErrorModal(false)}
-            className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ConfirmCancelRequestModal = ({ showCancelRequestModal, setShowCancelRequestModal, handleCancelRequest, cancelRequestBookingId }) => {
-  if (!showCancelRequestModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-sm w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
-            Confirm Cancellation Request
-          </h2>
-          <button
-            onClick={() => setShowCancelRequestModal(false)}
-            className="text-gray-500 hover:text-gray-700 text-xl"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <p className="text-gray-600 mb-6">
-          Are you sure you want to request cancellation of this booking?
-        </p>
-        <div className="flex justify-end space-x-4">
-          <button
-            onClick={() => setShowCancelRequestModal(false)}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium rounded-lg"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => handleCancelRequest(cancelRequestBookingId)}
-            className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
-          >
-            Submit Request
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const FeedbackModal = ({ showFeedbackModal, setShowFeedbackModal, feedbackData, setFeedbackData, handleFeedbackSubmit, tourTitle }) => {
-  if (!showFeedbackModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: '#00355f' }}>
-            Feedback for {tourTitle}
-          </h2>
-          <button
-            onClick={() => setShowFeedbackModal(false)}
-            className="text-gray-500 hover:text-gray-700 text-xl"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Rating</label>
-          <div className="flex space-x-1">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <FaStar
-                key={star}
-                className={`h-6 w-6 cursor-pointer ${feedbackData.rating >= star ? 'text-yellow-400' : 'text-gray-300'}`}
-                onClick={() => setFeedbackData({ ...feedbackData, rating: star })}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
-          <textarea
-            value={feedbackData.comments}
-            onChange={(e) => setFeedbackData({ ...feedbackData, comments: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            rows="4"
-            placeholder="Share your experience..."
-          />
-        </div>
-        <div className="flex justify-end space-x-4">
-          <button
-            onClick={() => setShowFeedbackModal(false)}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium rounded-lg"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleFeedbackSubmit}
-            className="px-4 py-2 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: '#00355f', color: 'white' }}
-          >
-            Submit Feedback
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export default Profile;

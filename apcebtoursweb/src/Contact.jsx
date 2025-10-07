@@ -168,51 +168,58 @@ const Contact = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!user) {
-      setIsLogin(true);
-      setShowAuthModal(true);
-      return;
+  e.preventDefault();
+
+  // 1️⃣ Save the contact form data into Supabase table
+  const { error: dbError } = await supabase
+    .from("contacts")
+    .insert([
+      {
+        user_id: user?.id || null,
+        full_name: formData.fullName,
+        email: formData.email,
+        subject: formData.subject,
+        message: formData.message,
+      },
+    ]);
+
+  if (dbError) {
+    console.error("DB Insert Error:", dbError.message);
+    alert("Failed to save your message. Please try again.");
+    return;
+  }
+
+  // 2️⃣ Call Supabase Edge Function to send email
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-contact-email`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+  },
+  body: JSON.stringify({
+    full_name: formData.fullName,
+    email: formData.email,
+    subject: formData.subject,
+    message: formData.message,
+  }),
+});
+
+    const data = await response.json();
+
+    if (response.ok) {
+      alert("Your message has been sent to the admin 🎉");
+      setFormData({ fullName: "", email: "", subject: "", message: "" });
+    } else {
+      console.error("Email Error:", data.error);
+      alert("Saved, but failed to send email.");
     }
+  } catch (err) {
+    console.error("Function Error:", err);
+    alert("Something went wrong while sending email.");
+  }
+};
 
-    setIsSubmitting(true);
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .insert([
-          {
-            user_id: user.id,
-            full_name: formData.fullName,
-            email: formData.email,
-            subject: formData.subject,
-            message: formData.message
-          }
-        ]);
-
-      if (error) {
-        throw error;
-      }
-
-      setSuccessMessage("Message sent successfully! We'll get back to you soon!");
-      setShowSuccessModal(true);
-      setFormData({
-        fullName: '',
-        email: user.email || '',
-        subject: '',
-        message: ''
-      });
-
-      setTimeout(() => {
-        setShowSuccessModal(false);
-      }, 5000);
-    } catch (error) {
-      console.error("Contact form submission error:", error);
-      setErrorMessage(`Failed to send message: ${error.message}`);
-      setShowErrorModal(true);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   if (loadingUser) {
     return <div className="p-6">Loading...</div>;

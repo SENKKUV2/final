@@ -52,25 +52,48 @@ serve(async (req) => {
     let subject = "";
     let body = "";
 
-    if (status === "confirmed") {
-      subject = "Booking Confirmed 🎉";
-      body = `
-        <h1>Your Booking is Confirmed</h1>
-        <p>Hi ${userName},</p>
-        <p>Your booking for <strong>${tourTitle}</strong> has been confirmed.</p>
-        <p>Tour ID: ${booking.tour_id}</p>
-        <p>We’re excited to have you join us!</p>
-      `;
-    } else if (status === "completed") {
-      subject = "Booking Completed ✅";
-      body = `
-        <h1>Thank You for Joining!</h1>
-        <p>Hi ${userName},</p>
-        <p>Your booking for <strong>${tourTitle}</strong> has been marked as completed.</p>
-        <p>We hope you had a great experience and look forward to seeing you again!</p>
-      `;
-    } else {
-      throw new Error(`Unsupported status: ${status}`);
+    switch (status) {
+      case "approved":
+        subject = "Booking Approved ✅";
+        body = `
+          <h1>Your Booking Has Been Approved</h1>
+          <p>Hi ${userName},</p>
+          <p>Great news! Your booking for <strong>${tourTitle}</strong> has been approved.</p>
+          <p>Tour ID: ${booking.tour_id}</p>
+          <p>We're looking forward to having you join us! You'll receive a confirmation email with further details soon.</p>
+        `;
+        break;
+      case "confirmed":
+        subject = "Booking Confirmed 🎉";
+        body = `
+          <h1>Your Booking is Confirmed</h1>
+          <p>Hi ${userName},</p>
+          <p>Your booking for <strong>${tourTitle}</strong> has been confirmed.</p>
+          <p>Tour ID: ${booking.tour_id}</p>
+          <p>We’re excited to have you join us!</p>
+        `;
+        break;
+      case "completed":
+        subject = "Booking Completed ✅";
+        body = `
+          <h1>Thank You for Joining!</h1>
+          <p>Hi ${userName},</p>
+          <p>Your booking for <strong>${tourTitle}</strong> has been marked as completed.</p>
+          <p>We hope you had a great experience and look forward to seeing you again!</p>
+        `;
+        break;
+      case "cancelled":
+        subject = "Booking Cancelled";
+        body = `
+          <h1>Your Booking Has Been Cancelled</h1>
+          <p>Hi ${userName},</p>
+          <p>We're sorry to inform you that your booking for <strong>${tourTitle}</strong> has been cancelled.</p>
+          <p>Tour ID: ${booking.tour_id}</p>
+          <p>If you have any questions or would like to book another tour, please contact our support team.</p>
+        `;
+        break;
+      default:
+        throw new Error(`Unsupported status: ${status}`);
     }
 
     // Send email

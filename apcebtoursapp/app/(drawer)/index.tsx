@@ -605,7 +605,7 @@ export default function AdminDashboard() {
   };
 
   const StatChart = ({ type, title, value, trend, icon, iconColor, dataKey, chartColor }: { type: 'line' | 'pie' | 'progress'; title: string; value: string; trend: string; icon: IconName; iconColor: string; dataKey: keyof DashboardStats; chartColor: string }) => {
-    if (!stats || stats[dataKey] == null) return <View style={s.card}><Text style={s.noData}>No data</Text></View>;
+    if (!stats || stats[dataKey] == null) return <View style={s.chartContainer}><Text style={s.noData}>No data</Text></View>;
 
     let chartData: LineChartData | PieChartData | ProgressChartData;
     if (type === 'line') {
@@ -623,7 +623,7 @@ export default function AdminDashboard() {
     }
 
     return (
-      <View style={s.card}>
+      <View style={s.chartContainer}>
         <View style={s.statHeader}>
           <View style={[s.icon, { backgroundColor: `${iconColor}15` }]}><MaterialIcons name={icon} size={16} color={iconColor} /></View>
           <View style={s.trend}>
@@ -700,7 +700,11 @@ export default function AdminDashboard() {
               { type: 'line' as const, title: 'Total Revenue', value: `₱${stats?.totalRevenue.toLocaleString() || '0'}`, trend: stats?.revenueTrend || '0%', icon: 'attach-money' as IconName, iconColor: '#f57c00', dataKey: 'monthlyRevenue' as keyof DashboardStats, chartColor: '#f57c00' },
               { type: 'pie' as const, title: 'Available Tours', value: stats?.upcomingTours.toString() || '0', trend: '+3', icon: 'tour' as IconName, iconColor: '#2196F3', dataKey: 'tourTypeDistribution' as keyof DashboardStats, chartColor: '#2196F3' },
               { type: 'progress' as const, title: 'Total Users', value: stats?.activeCustomers.toString() || '0', trend: '+15%', icon: 'people' as IconName, iconColor: '#9C27B0', dataKey: 'activeCustomers' as keyof DashboardStats, chartColor: '#9C27B0' }
-            ].map((c, i) => <StatChart key={i} {...c} />)}
+            ].map((c, i) => (
+              <TouchableOpacity key={i} style={s.card} onPress={() => router.push('/reports')}>
+                <StatChart {...c} />
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
         <View style={s.section}>
@@ -811,6 +815,7 @@ const s = StyleSheet.create({
   badgeText: { color: '#fff', fontSize: 8, fontWeight: 'bold' },
   analytics: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 },
   card: { backgroundColor: '#fff', borderRadius: 10, padding: 12, width: '48%', marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  chartContainer: { padding: 12 },
   statHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   icon: { padding: 5, borderRadius: 6 },
   trend: { flexDirection: 'row', alignItems: 'center' },
@@ -886,7 +891,7 @@ const ms = StyleSheet.create({
   statValue: { fontSize: 16, fontWeight: '600', color: '#333', marginTop: 4 },
   statLabel: { fontSize: 10, color: '#666', marginTop: 2, textAlign: 'center' },
   actions: { flexDirection: 'row', padding: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#eee', gap: 10 },
-  action: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
+  action: { flex: 1, flexDirection: 'row', flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1 },
   bookingsAction: { backgroundColor: '#4CAF50' },
   actionText: { color: '#fff', fontWeight: '600', fontSize: 12, marginLeft: 5 },
   notificationCard: { 
