@@ -150,25 +150,26 @@ export default function DrawerLayout() {
         screenOptions={{
           headerShown: true,
           headerStyle: {
-            backgroundColor: '#faf9f7',
+            backgroundColor: '#00355f', // brand blue header
             elevation: 4,
             shadowOpacity: 0.1,
-            shadowColor: '#f57c00',
+            shadowColor: '#001f33',
             borderBottomWidth: 1,
-            borderBottomColor: '#ffcc80',
+            borderBottomColor: '#eec218', // accent gold
           },
-          headerTintColor: '#f57c00',
+          headerTintColor: '#ffffff', // white header icons/text
           headerTitleStyle: {
             fontWeight: '600',
             fontSize: 18,
-            color: '#333',
+            color: '#ffffff',
           },
           drawerStyle: {
-            backgroundColor: '#faf9f7',
+            backgroundColor: '#f4f7fb', // light background for drawer
             width: 280,
           },
-          drawerActiveTintColor: '#f57c00',
+          drawerActiveTintColor: '#00355f', // blue text for active item
           drawerInactiveTintColor: '#666',
+          drawerActiveBackgroundColor: '#e6edf4', // soft blue highlight
           swipeEnabled: true,
           drawerPosition: 'left',
         }}
@@ -214,7 +215,6 @@ export default function DrawerLayout() {
             ),
           }}
         />
-
         <Drawer.Screen
           name="messages"
           options={{
@@ -225,7 +225,6 @@ export default function DrawerLayout() {
             ),
           }}
         />
-
         <Drawer.Screen
           name="settings"
           options={{
@@ -241,18 +240,67 @@ export default function DrawerLayout() {
   );
 }
 
-// ✅ Styles unchanged...
+// ✅ Styles updated for AP Cebu Tours color palette
 const styles = StyleSheet.create({
-  drawerContainer: { flex: 1, backgroundColor: '#faf9f7' },
-  drawerHeader: { padding: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ffcc80', alignItems: 'center', marginBottom: 10 },
-  drawerHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginTop: 10 },
-  drawerHeaderSubtitle: { fontSize: 14, color: '#666', marginTop: 4 },
+  drawerContainer: { flex: 1, backgroundColor: '#f4f7fb' },
+  drawerHeader: {
+    padding: 20,
+    backgroundColor: '#00355f',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eec218',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  drawerHeaderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginTop: 10,
+  },
+  drawerHeaderSubtitle: {
+    fontSize: 14,
+    color: '#eec218',
+    marginTop: 4,
+  },
   drawerContent: { paddingTop: 10 },
-  drawerItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 20, marginHorizontal: 10, borderRadius: 8, marginBottom: 2 },
-  drawerItemActive: { backgroundColor: '#fff3e0', borderLeftWidth: 4, borderLeftColor: '#f57c00' },
-  drawerItemText: { fontSize: 16, marginLeft: 15, color: '#666', fontWeight: '500' },
-  drawerItemTextActive: { color: '#f57c00', fontWeight: '600' },
-  settingsItem: { borderTopWidth: 1, borderTopColor: '#ffcc80', marginTop: 10, paddingTop: 20 },
-  drawerFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#ffcc80', alignItems: 'center' },
-  drawerFooterText: { fontSize: 12, color: '#999' },
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    marginHorizontal: 10,
+    borderRadius: 8,
+    marginBottom: 2,
+  },
+  drawerItemActive: {
+    backgroundColor: '#e6edf4',
+    borderLeftWidth: 4,
+    borderLeftColor: '#00355f',
+  },
+  drawerItemText: {
+    fontSize: 16,
+    marginLeft: 15,
+    color: '#444',
+    fontWeight: '500',
+  },
+  drawerItemTextActive: {
+    color: '#00355f',
+    fontWeight: '600',
+  },
+  settingsItem: {
+    borderTopWidth: 1,
+    borderTopColor: '#eec218',
+    marginTop: 10,
+    paddingTop: 20,
+  },
+  drawerFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#eec218',
+    alignItems: 'center',
+  },
+  drawerFooterText: {
+    fontSize: 12,
+    color: '#999',
+  },
 });

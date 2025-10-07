@@ -416,20 +416,46 @@ ${userMessageText}
                     <FaRobot className="w-6 h-6" />
                     <h3 className="font-semibold">TourGuide AI</h3>
                 </div>
-                <div className="flex items-center space-x-3">
-                    <button
-                        onClick={() => setShowHistory(!showHistory)}
-                        className="p-2 rounded-full hover:bg-white hover:bg-opacity-20"
-                    >
-                        <FaComments size={18} />
-                    </button>
-                    <button
-                        onClick={() => setIsOpen(false)}
-                        className="p-2 rounded-full hover:bg-white hover:bg-opacity-20"
-                    >
-                        <FaTimes size={20} />
-                    </button>
-                </div>
+               <div className="flex items-center space-x-3">
+  <button
+    onClick={() => setShowHistory(!showHistory)}
+    className="p-2 rounded-full transition-all duration-300"
+    style={{
+      backgroundColor: '#00355f',
+      color: 'white',
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.backgroundColor = '#004a84';
+      e.currentTarget.style.transform = 'scale(1.1)';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.backgroundColor = '#00355f';
+      e.currentTarget.style.transform = 'scale(1)';
+    }}
+  >
+    <FaComments size={18} />
+  </button>
+
+  <button
+    onClick={() => setIsOpen(false)}
+    className="p-2 rounded-full transition-all duration-300"
+    style={{
+      backgroundColor: '#00355f',
+      color: 'white',
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.backgroundColor = '#004a84';
+      e.currentTarget.style.transform = 'scale(1.1)';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.backgroundColor = '#00355f';
+      e.currentTarget.style.transform = 'scale(1)';
+    }}
+  >
+    <FaTimes size={20} />
+  </button>
+</div>
+
             </div>
 
             {/* Chat history sidebar */}

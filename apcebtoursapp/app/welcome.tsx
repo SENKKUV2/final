@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: 'rgba(245, 124, 0, 0.05)',
+    backgroundColor: 'rgba(0, 53, 95, 0.05)',
   },
   backgroundDecorationSmall: {
     position: 'absolute',
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: 'rgba(245, 124, 0, 0.03)',
+    backgroundColor: 'rgba(0, 53, 95, 0.03)',
   },
   header: {
     alignItems: 'center',
@@ -249,12 +249,12 @@ const styles = StyleSheet.create({
   logoContainer: {
     width: 100,
     height: 100,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#f57c00',
+    shadowColor: '#00355F',
     shadowOffset: {
       width: 0,
       height: 8,
@@ -263,18 +263,18 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     borderWidth: 3,
-    borderColor: 'rgba(245, 124, 0, 0.1)',
+    borderColor: 'rgba(0, 53, 95, 0.1)',
   },
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#2c2c2c',
+    color: '#333',
     marginBottom: 8,
     letterSpacing: -1,
   },
   subtitle: {
     fontSize: 18,
-    color: '#f57c00',
+    color: '#00355F',
     fontWeight: '700',
     marginBottom: 16,
     letterSpacing: 0.5,
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     marginBottom: 20,
     paddingHorizontal: 20,
@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(245, 124, 0, 0.1)',
+    borderColor: 'rgba(0, 53, 95, 0.1)',
   },
   inputIcon: {
     marginRight: 16,
@@ -333,15 +333,15 @@ const styles = StyleSheet.create({
   },
   forgotPasswordText: {
     fontSize: 14,
-    color: '#f57c00',
+    color: '#EEC218',
     fontWeight: '600',
   },
   loginButton: {
-    backgroundColor: '#f57c00',
+    backgroundColor: '#00355F',
     paddingVertical: 20,
     paddingHorizontal: 32,
     borderRadius: 16,
-    shadowColor: '#f57c00',
+    shadowColor: '#00355F',
     shadowOffset: {
       width: 0,
       height: 6,
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loginButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.5,
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   securityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 124, 0, 0.1)',
+    backgroundColor: 'rgba(238, 194, 24, 0.1)',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
   },
   securityText: {
     fontSize: 14,
-    color: '#f57c00',
+    color: '#EEC218',
     fontWeight: '600',
     marginLeft: 8,
   },

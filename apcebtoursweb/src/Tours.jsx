@@ -5,6 +5,7 @@ import Navbar from "./Navbar";
 import { useAuth } from "./AuthContext";
 import Chatbot from "./AI/Chatbot";
 import { FaRobot } from "react-icons/fa";
+import { useNavigate } from "react-router-dom";
 
 function Tours() {
   const { user, setUser } = useAuth();
@@ -19,6 +20,7 @@ function Tours() {
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
   const [showTourDetailsModal, setShowTourDetailsModal] = useState(false);
   const [selectedTourDetails, setSelectedTourDetails] = useState(null);
+  const navigate = useNavigate();
 
   // Auth states
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -255,11 +257,7 @@ function Tours() {
             Explore<span className="block font-semibold" style={{ color: "#eec218" }}>Cebu</span>
           </h1>
           <p className="text-xl md:text-2xl mb-12 max-w-4xl mx-auto font-normal leading-relaxed text-white/95">Discover the beauty of the Philippines with our carefully curated tour packages. From pristine beaches to cultural heritage sites.</p>
-          <div className="flex flex-col sm:flex-row gap-6 justify-center">
-            <button className="px-12 py-5 font-semibold text-lg rounded-lg hover:scale-105 transition-all duration-300 shadow-xl text-white border-0" style={{ backgroundColor: "#eec218", color: "#00355f" }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = "#d4a617"} onMouseLeave={(e) => e.target.style.backgroundColor = "#eec218"}>Browse Tours</button>
-            <button className="px-12 py-5 bg-transparent border-2 border-white/40 text-white font-semibold text-lg rounded-lg hover:bg-white/10 hover:scale-105 transition-all duration-300">Custom Package</button>
-          </div>
+          
           <div className="flex flex-wrap justify-center gap-8 mt-16 pt-8 border-t border-white/20">
             {stats.map((stat, i) => (
               <div key={i} className="text-center">
@@ -398,12 +396,22 @@ function Tours() {
           <h2 className="text-4xl md:text-5xl font-normal text-white mb-6">Ready for Your Adventure?</h2>
           <p className="text-xl text-white/90 mb-12 font-normal">Contact us today to customize your perfect Philippine getaway. Our experienced guides are ready to make your trip unforgettable.</p>
           <div className="flex flex-col sm:flex-row gap-6 justify-center">
-            <button className="px-8 py-4 font-semibold rounded-lg transition-all duration-300 shadow-lg" style={{ backgroundColor: "#eec218", color: "#00355f" }}
-              onMouseEnter={(e) => { e.target.style.backgroundColor = "#d4a617"; e.target.style.transform = "scale(1.05)"; }}
-              onMouseLeave={(e) => { e.target.style.backgroundColor = "#eec218"; e.target.style.transform = "scale(1)"; }}
-            >Contact Us Now</button>
-            <button className="px-8 py-4 bg-transparent border-2 border-white/40 text-white font-semibold rounded-lg hover:bg-white/10 hover:scale-105 transition-all duration-300">View Custom Tours</button>
-          </div>
+      <button
+        onClick={() => navigate("/contact")}
+        className="px-8 py-4 font-semibold rounded-lg transition-all duration-300 shadow-lg"
+        style={{ backgroundColor: "#eec218", color: "#00355f" }}
+        onMouseEnter={(e) => {
+          e.target.style.backgroundColor = "#d4a617";
+          e.target.style.transform = "scale(1.05)";
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.backgroundColor = "#eec218";
+          e.target.style.transform = "scale(1)";
+        }}
+      >
+        Contact Us Now
+      </button>
+    </div>
         </div>
       </section>
 

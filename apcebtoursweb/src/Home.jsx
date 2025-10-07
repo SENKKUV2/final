@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
 import { FaPlane, FaUmbrellaBeach, FaBullseye, FaHotel } from 'react-icons/fa';
+import { useNavigate } from "react-router-dom";
 
 function Home({ user, onLoginClick }) {
   const [featuredTours, setFeaturedTours] = useState([]);
@@ -76,6 +77,8 @@ function Home({ user, onLoginClick }) {
       description: "Assistance with accommodation booking at the best rates and locations."
     }
   ];
+  const navigate = useNavigate();
+
 
   // Fetch tours from Supabase
   useEffect(() => {
@@ -238,22 +241,23 @@ function Home({ user, onLoginClick }) {
           </p>
           
           <div className="flex justify-center items-center">
-            <button 
-              onClick={() => handleBookNow()}
-              className="px-12 py-5 font-semibold text-lg rounded-lg hover:scale-105 transition-all duration-300 shadow-xl text-white border-0"
-              style={{ 
-                backgroundColor: '#eec218',
-                color: '#00355f'
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = '#d4a617';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = '#eec218';
-              }}
-            >
-              Book Now
-            </button>
+           <button
+  onClick={() => navigate("/tours")}
+  className="px-12 py-5 font-semibold text-lg rounded-lg hover:scale-105 transition-all duration-300 shadow-xl text-white border-0"
+  style={{
+    backgroundColor: '#eec218',
+    color: '#00355f'
+  }}
+  onMouseEnter={(e) => {
+    e.target.style.backgroundColor = '#d4a617';
+  }}
+  onMouseLeave={(e) => {
+    e.target.style.backgroundColor = '#eec218';
+  }}
+>
+  Book Now
+</button>
+
           </div>
 
           {/* Quick Stats */}
@@ -403,25 +407,26 @@ function Home({ user, onLoginClick }) {
           )}
 
           <div className="text-center mt-12">
-            <button 
-              className="px-8 py-4 font-semibold rounded-lg transition-all duration-300 border-2"
-              style={{ 
-                backgroundColor: 'transparent',
-                color: '#00355f',
-                borderColor: '#00355f'
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = '#00355f';
-                e.target.style.color = 'white';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = 'transparent';
-                e.target.style.color = '#00355f';
-              }}
-            >
-              View All Tours
-            </button>
-          </div>
+      <button
+        onClick={() => navigate("/tours")}
+        className="px-8 py-4 font-semibold rounded-lg transition-all duration-300 border-2"
+        style={{
+          backgroundColor: "transparent",
+          color: "#00355f",
+          borderColor: "#00355f",
+        }}
+        onMouseEnter={(e) => {
+          e.target.style.backgroundColor = "#00355f";
+          e.target.style.color = "white";
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.backgroundColor = "transparent";
+          e.target.style.color = "#00355f";
+        }}
+      >
+        View All Tours
+      </button>
+    </div>
         </div>
       </section>
 

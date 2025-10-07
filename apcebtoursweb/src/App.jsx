@@ -180,7 +180,7 @@ function App() {
       >
         <FaRobot
           size={28}
-          className="text-white group-hover:rotate-12 transition-transform duration-300"
+          className="text-#00355f group-hover:rotate-12 transition-transform duration-300"
         />
       </button>
       <Chatbot

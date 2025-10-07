@@ -398,11 +398,43 @@ function Profile() {
                 <p className="text-gray-600 mb-2">{user.email}</p>
                 {state.profile?.role && <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 mb-4">{state.profile.role}</span>}
                 <div className="flex gap-4">
-                  <button onClick={() => updateState({ isEditingProfile: true })} className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 transition duration-300 flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    Edit Profile
-                  </button>
-                  <button onClick={() => updateState({ isChangingPassword: true })} className="bg-gray-600 text-white px-6 py-2 rounded-full hover:bg-gray-700 transition duration-300">Change Password</button>
+                  <button
+  onClick={() => updateState({ isEditingProfile: true })}
+  className="text-white px-6 py-2 rounded-full transition duration-300 flex items-center justify-center gap-2"
+  style={{
+    backgroundColor: '#00355f',        // AP Cebu Tours blue
+  }}
+  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')} // lighter hover blue
+  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
+>
+  <svg
+    className="w-4 h-4"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+    />
+  </svg>
+  Edit Profile
+</button>
+
+                 <button
+  onClick={() => updateState({ isChangingPassword: true })}
+  className="text-white px-6 py-2 rounded-full transition duration-300"
+  style={{
+    backgroundColor: '#00355f', // AP Cebu Tours blue
+  }}
+  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')} // lighter hover
+  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
+>
+  Change Password
+</button>
+
                 </div>
               </div>
             </div>
