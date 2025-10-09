@@ -168,58 +168,65 @@ const Contact = () => {
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
+    setIsSubmitting(true);
 
-  // 1️⃣ Save the contact form data into Supabase table
-  const { error: dbError } = await supabase
-    .from("contacts")
-    .insert([
-      {
-        user_id: user?.id || null,
-        full_name: formData.fullName,
-        email: formData.email,
-        subject: formData.subject,
-        message: formData.message,
-      },
-    ]);
+    // 1️⃣ Save the contact form data into Supabase table
+    const { error: dbError } = await supabase
+      .from("contacts")
+      .insert([
+        {
+          user_id: user?.id || null,
+          full_name: formData.fullName,
+          email: formData.email,
+          subject: formData.subject,
+          message: formData.message,
+        },
+      ]);
 
-  if (dbError) {
-    console.error("DB Insert Error:", dbError.message);
-    alert("Failed to save your message. Please try again.");
-    return;
-  }
-
-  // 2️⃣ Call Supabase Edge Function to send email
-  try {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-contact-email`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-  },
-  body: JSON.stringify({
-    full_name: formData.fullName,
-    email: formData.email,
-    subject: formData.subject,
-    message: formData.message,
-  }),
-});
-
-    const data = await response.json();
-
-    if (response.ok) {
-      alert("Your message has been sent to the admin 🎉");
-      setFormData({ fullName: "", email: "", subject: "", message: "" });
-    } else {
-      console.error("Email Error:", data.error);
-      alert("Saved, but failed to send email.");
+    if (dbError) {
+      console.error("DB Insert Error:", dbError.message);
+      setErrorMessage("Failed to save your message. Please try again.");
+      setShowErrorModal(true);
+      setIsSubmitting(false);
+      return;
     }
-  } catch (err) {
-    console.error("Function Error:", err);
-    alert("Something went wrong while sending email.");
-  }
-};
 
+    // 2️⃣ Call Supabase Edge Function to send email
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-contact-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          full_name: formData.fullName,
+          email: formData.email,
+          subject: formData.subject,
+          message: formData.message,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccessMessage("Your message has been sent to the admin 🎉");
+        setShowSuccessModal(true);
+        setFormData({ fullName: "", email: "", subject: "", message: "" });
+      } else {
+        console.error("Email Error:", data.error);
+        setErrorMessage("Saved, but failed to send email.");
+        setShowErrorModal(true);
+      }
+    } catch (err) {
+      console.error("Function Error:", err);
+      setErrorMessage("Something went wrong while sending email.");
+      setShowErrorModal(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (loadingUser) {
     return <div className="p-6">Loading...</div>;

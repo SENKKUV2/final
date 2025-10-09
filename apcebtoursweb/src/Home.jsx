@@ -517,15 +517,6 @@ function Home({ user, onLoginClick }) {
             </p>
           </div>
           <div className="md:w-1/2 flex justify-center md:justify-end">
-            <button 
-              className="px-8 py-4 font-semibold rounded-lg transition-colors duration-300"
-              style={{ 
-                backgroundColor: '#eec218',
-                color: '#00355f'
-              }}
-            >
-              Contact Us
-            </button>
           </div>
         </div>
       </section>

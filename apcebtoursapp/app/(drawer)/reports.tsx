@@ -4,10 +4,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Dimensions, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View
+  ActivityIndicator, Dimensions, Modal, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from 'react-native';
 import { LineChart, PieChart, BarChart } from 'react-native-chart-kit';
-import * as XLSX from 'xlsx'; // Add SheetJS for Excel export
+import * as XLSX from 'xlsx';
 
 const { width } = Dimensions.get('window');
 
@@ -30,6 +30,9 @@ export default function ReportsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState<'success' | 'error'>('success');
+  const [modalMessage, setModalMessage] = useState('');
 
   useEffect(() => { fetchReportsData(); }, []);
 
@@ -132,7 +135,6 @@ export default function ReportsScreen() {
     const reportDate = new Date();
     const dateStr = reportDate.toISOString().split('T')[0];
 
-    // Generate dynamic month labels for the last 6 months
     const monthLabels = Array.from({ length: 6 }, (_, i) => {
       const date = new Date();
       date.setMonth(date.getMonth() - (5 - i));
@@ -300,7 +302,6 @@ export default function ReportsScreen() {
       const timestamp = new Date().toISOString().split('T')[0];
       const workbook = XLSX.utils.book_new();
 
-      // Convert each sheet to an Excel worksheet
       const sheets = [
         { name: 'Executive Summary', data: reportData.executiveSummary },
         { name: 'Monthly Performance', data: reportData.monthlyPerformance },
@@ -315,7 +316,6 @@ export default function ReportsScreen() {
         XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
       });
 
-      // Add a chart data sheet for easier chart creation in Excel
       const chartDataSheet = [
         ['Chart Data for Visualizations'],
         [''],
@@ -355,7 +355,6 @@ export default function ReportsScreen() {
       const chartWorksheet = XLSX.utils.aoa_to_sheet(chartDataSheet);
       XLSX.utils.book_append_sheet(workbook, chartWorksheet, 'Chart Data');
 
-      // Export the workbook
       const filename = `business_intelligence_report_${timestamp}.xlsx`;
       if (Platform.OS === 'web') {
         const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
@@ -365,7 +364,9 @@ export default function ReportsScreen() {
         link.download = filename;
         link.click();
         URL.revokeObjectURL(link.href);
-        Alert.alert('Success', `Excel report downloaded as ${filename}. Open in Excel to create charts using the Chart Data sheet.`);
+        setModalType('success');
+        setModalMessage(`Excel report downloaded as ${filename}. Open in Excel to create charts using the Chart Data sheet.`);
+        setModalVisible(true);
       } else {
         const fileUri = `${FileSystem.documentDirectory}${filename}`;
         const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'base64' });
@@ -379,20 +380,20 @@ export default function ReportsScreen() {
             dialogTitle: 'Export Business Report',
             UTI: 'com.microsoft.excel.xlsx'
           });
-          Alert.alert(
-            'Success',
-            `Excel report generated: ${filename}\n\nIncludes 6 sheets with data and a Chart Data sheet for visualizations.\nOpen in Excel to create charts using the provided data.`
-          );
+          setModalType('success');
+          setModalMessage(`Excel report generated: ${filename}\n\nIncludes 6 sheets with data and a Chart Data sheet for visualizations.\nOpen in Excel to create charts using the provided data.`);
+          setModalVisible(true);
         } else {
-          Alert.alert(
-            'Report Generated',
-            `Excel report saved to: ${fileUri}\n\nIncludes 6 sheets and a Chart Data sheet. Transfer to a computer and open in Excel to create Tableau-style charts.`
-          );
+          setModalType('success');
+          setModalMessage(`Excel report saved to: ${fileUri}\n\nIncludes 6 sheets and a Chart Data sheet. Transfer to a computer and open in Excel to create Tableau-style charts.`);
+          setModalVisible(true);
         }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to generate Excel report.';
-      Alert.alert('Export Failed', errorMessage);
+      setModalType('error');
+      setModalMessage(errorMessage);
+      setModalVisible(true);
       console.error('Export error:', error);
     } finally {
       setExporting(false);
@@ -431,32 +432,36 @@ export default function ReportsScreen() {
     datasets: [{ data: stats?.monthlyBookings || [] }]
   };
 
-  if (loading && !refreshing) return (
-    <View style={styles.loadingContainer}>
-      <View style={styles.loadingCard}>
-        <ActivityIndicator size="large" color="#6366f1" />
-        <Text style={styles.loadingText}>Generating Analytics...</Text>
-        <Text style={styles.loadingSubText}>Please wait while we process your data</Text>
-      </View>
-    </View>
-  );
-
-  if (error) return (
-    <View style={styles.errorContainer}>
-      <View style={styles.errorCard}>
-        <MaterialIcons name="analytics" size={48} color="#f72585" />
-        <Text style={styles.errorTitle}>Analytics Unavailable</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchReportsData}>
-          <MaterialIcons name="refresh" size={20} color="#fff" />
-          <Text style={styles.retryText}>Retry Analysis</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, modalType === 'success' ? styles.modalSuccess : styles.modalError]}>
+            <MaterialIcons
+              name={modalType === 'success' ? 'check-circle' : 'error'}
+              size={48}
+              color={modalType === 'success' ? '#06d6a0' : '#f72585'}
+              style={styles.modalIcon}
+            />
+            <Text style={styles.modalTitle}>
+              {modalType === 'success' ? 'Export Successful' : 'Export Failed'}
+            </Text>
+            <Text style={styles.modalMessage}>{modalMessage}</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={styles.modalButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchReportsData(); }} colors={['#6366f1']} />}>
         <View style={styles.header}>
           <View>
@@ -465,167 +470,191 @@ export default function ReportsScreen() {
           </View>
         </View>
 
-        <View style={styles.kpiSection}>
-          <View style={styles.kpiRow}>
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="large" color="#6366f1" />
+              <Text style={styles.loadingText}>Generating Analytics...</Text>
+              <Text style={styles.loadingSubText}>Please wait while we process your data</Text>
+            </View>
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <View style={styles.errorCard}>
+              <MaterialIcons name="analytics" size={48} color="#f72585" />
+              <Text style={styles.errorTitle}>Analytics Unavailable</Text>
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={fetchReportsData}>
+                <MaterialIcons name="refresh" size={20} color="#fff" />
+                <Text style={styles.retryText}>Retry Analysis</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <>
+            <View style={styles.kpiSection}>
+              <View style={styles.kpiRow}>
+                {[
+                  { icon: 'trending-up', color: '#06d6a0', value: `₱${(stats?.totalRevenue || 0).toLocaleString()}`, label: 'Total Revenue (Completed Bookings)', trend: stats?.revenueTrend, style: styles.primaryKpi },
+                  { icon: 'event-available', color: '#6366f1', value: stats?.totalBookings || 0, label: 'Total Bookings (Completed)', trend: stats?.bookingsTrend, style: styles.secondaryKpi }
+                ].map((kpi, i) => (
+                  <View key={i} style={[styles.kpiCard, kpi.style]}>
+                    <MaterialIcons name={kpi.icon} size={28} color={kpi.color} style={styles.kpiIconContainer} />
+                    <Text style={styles.kpiValue}>{kpi.value}</Text>
+                    <Text style={styles.kpiLabel}>{kpi.label}</Text>
+                    {kpi.trend && (
+                      <View style={styles.trendContainer}>
+                        <MaterialIcons name={kpi.trend.startsWith('+') ? 'arrow-upward' : 'arrow-downward'} size={14} color={kpi.trend.startsWith('+') ? '#06d6a0' : '#f72585'} />
+                        <Text style={[styles.trendText, { color: kpi.trend.startsWith('+') ? '#06d6a0' : '#f72585' }]}>{kpi.trend}</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+              <View style={styles.kpiRow}>
+                {[
+                  { icon: 'tour', color: '#ffbe0b', value: stats?.upcomingTours || 0, label: 'Active Tours' },
+                  { icon: 'people', color: '#fb8500', value: stats?.activeCustomers || 0, label: 'Customers' }
+                ].map((kpi, i) => (
+                  <View key={i} style={styles.kpiCard}>
+                    <MaterialIcons name={kpi.icon} size={24} color={kpi.color} style={styles.kpiIconContainer} />
+                    <Text style={styles.kpiValue}>{kpi.value}</Text>
+                    <Text style={styles.kpiLabel}>{kpi.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
             {[
-              { icon: 'trending-up', color: '#06d6a0', value: `₱${(stats?.totalRevenue || 0).toLocaleString()}`, label: 'Total Revenue (Completed Bookings)', trend: stats?.revenueTrend, style: styles.primaryKpi },
-              { icon: 'event-available', color: '#6366f1', value: stats?.totalBookings || 0, label: 'Total Bookings (Completed)', trend: stats?.bookingsTrend, style: styles.secondaryKpi }
-            ].map((kpi, i) => (
-              <View key={i} style={[styles.kpiCard, kpi.style]}>
-                <MaterialIcons name={kpi.icon} size={28} color={kpi.color} style={styles.kpiIconContainer} />
-                <Text style={styles.kpiValue}>{kpi.value}</Text>
-                <Text style={styles.kpiLabel}>{kpi.label}</Text>
-                {kpi.trend && (
-                  <View style={styles.trendContainer}>
-                    <MaterialIcons name={kpi.trend.startsWith('+') ? 'arrow-upward' : 'arrow-downward'} size={14} color={kpi.trend.startsWith('+') ? '#06d6a0' : '#f72585'} />
-                    <Text style={[styles.trendText, { color: kpi.trend.startsWith('+') ? '#06d6a0' : '#f72585' }]}>{kpi.trend}</Text>
+              { 
+                title: 'Revenue Performance', 
+                subtitle: 'Monthly revenue from completed bookings', 
+                chart: <LineChart data={revenueData} width={width - 60} height={240} chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(6, 214, 160, ${opacity})` }} bezier style={styles.chart} /> 
+              },
+              { 
+                title: 'Booking Trends', 
+                subtitle: 'Monthly completed bookings', 
+                chart: <BarChart data={bookingsBarData} width={width - 60} height={240} chartConfig={chartConfig} style={styles.chart} showValuesOnTopOfBars yAxisLabel="" yAxisSuffix="" /> 
+              },
+              {
+                title: 'Booking Status', 
+                subtitle: 'Current distribution overview',
+                chart: pieData.length > 0 ? (
+                  <PieChart data={pieData} width={width - 60} height={240} chartConfig={chartConfig} accessor="population" backgroundColor="transparent" paddingLeft="15" style={styles.chart} hasLegend />
+                ) : (
+                  <View style={styles.noDataContainer}>
+                    <MaterialIcons name="donut-small" size={48} color="#cbd5e1" />
+                    <Text style={styles.noDataText}>No booking data available</Text>
+                  </View>
+                )
+              }
+            ].map((section, i) => (
+              <View key={i} style={styles.chartSection}>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.chartTitle}>{section.title}</Text>
+                  <Text style={styles.chartSubtitle}>{section.subtitle}</Text>
+                </View>
+                <View style={styles.chartContainer}>{section.chart}</View>
+              </View>
+            ))}
+
+            <View style={styles.tableSection}>
+              <View style={styles.tableHeader}>
+                <Text style={styles.tableTitle}>Top Performing Locations</Text>
+                <Text style={styles.tableSubtitle}>Tours by destination</Text>
+              </View>
+              <View style={styles.tableContainer}>
+                {stats?.topLocations.length ? stats.topLocations.map((loc, i) => (
+                  <View key={i} style={styles.locationRow}>
+                    <View style={styles.locationRank}><Text style={styles.rankText}>#{i + 1}</Text></View>
+                    <View style={[styles.locationIndicator, { backgroundColor: loc.color }]} />
+                    <View style={styles.locationInfo}>
+                      <Text style={styles.locationName}>{loc.name}</Text>
+                      <Text style={styles.locationSubtext}>{loc.count} tours available</Text>
+                    </View>
+                    <View style={styles.locationMetric}>
+                      <Text style={styles.locationCount}>{loc.count}</Text>
+                      <Text style={styles.locationLabel}>tours</Text>
+                    </View>
+                  </View>
+                )) : (
+                  <View style={styles.noDataContainer}>
+                    <MaterialIcons name="location-off" size={48} color="#cbd5e1" />
+                    <Text style={styles.noDataText}>No location data available</Text>
                   </View>
                 )}
               </View>
-            ))}
-          </View>
-          <View style={styles.kpiRow}>
-            {[
-              { icon: 'tour', color: '#ffbe0b', value: stats?.upcomingTours || 0, label: 'Active Tours' },
-              { icon: 'people', color: '#fb8500', value: stats?.activeCustomers || 0, label: 'Customers' }
-            ].map((kpi, i) => (
-              <View key={i} style={styles.kpiCard}>
-                <MaterialIcons name={kpi.icon} size={24} color={kpi.color} style={styles.kpiIconContainer} />
-                <Text style={styles.kpiValue}>{kpi.value}</Text>
-                <Text style={styles.kpiLabel}>{kpi.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {[
-          { 
-            title: 'Revenue Performance', 
-            subtitle: 'Monthly revenue from completed bookings', 
-            chart: <LineChart data={revenueData} width={width - 60} height={240} chartConfig={{ ...chartConfig, color: (opacity = 1) => `rgba(6, 214, 160, ${opacity})` }} bezier style={styles.chart} /> 
-          },
-          { 
-            title: 'Booking Trends', 
-            subtitle: 'Monthly completed bookings', 
-            chart: <BarChart data={bookingsBarData} width={width - 60} height={240} chartConfig={chartConfig} style={styles.chart} showValuesOnTopOfBars yAxisLabel="" yAxisSuffix="" /> 
-          },
-          {
-            title: 'Booking Status', 
-            subtitle: 'Current distribution overview',
-            chart: pieData.length > 0 ? (
-              <PieChart data={pieData} width={width - 60} height={240} chartConfig={chartConfig} accessor="population" backgroundColor="transparent" paddingLeft="15" style={styles.chart} hasLegend />
-            ) : (
-              <View style={styles.noDataContainer}>
-                <MaterialIcons name="donut-small" size={48} color="#cbd5e1" />
-                <Text style={styles.noDataText}>No booking data available</Text>
-              </View>
-            )
-          }
-        ].map((section, i) => (
-          <View key={i} style={styles.chartSection}>
-            <View style={styles.chartHeader}>
-              <Text style={styles.chartTitle}>{section.title}</Text>
-              <Text style={styles.chartSubtitle}>{section.subtitle}</Text>
             </View>
-            <View style={styles.chartContainer}>{section.chart}</View>
-          </View>
-        ))}
 
-        <View style={styles.tableSection}>
-          <View style={styles.tableHeader}>
-            <Text style={styles.tableTitle}>Top Performing Locations</Text>
-            <Text style={styles.tableSubtitle}>Tours by destination</Text>
-          </View>
-          <View style={styles.tableContainer}>
-            {stats?.topLocations.length ? stats.topLocations.map((loc, i) => (
-              <View key={i} style={styles.locationRow}>
-                <View style={styles.locationRank}><Text style={styles.rankText}>#{i + 1}</Text></View>
-                <View style={[styles.locationIndicator, { backgroundColor: loc.color }]} />
-                <View style={styles.locationInfo}>
-                  <Text style={styles.locationName}>{loc.name}</Text>
-                  <Text style={styles.locationSubtext}>{loc.count} tours available</Text>
+            <View style={styles.statsSection}>
+              <View style={styles.statsHeader}>
+                <Text style={styles.statsTitle}>Tour Portfolio</Text>
+                <Text style={styles.statsSubtitle}>Comprehensive tour statistics</Text>
+              </View>
+              <View style={styles.statsGrid}>
+                {[
+                  { icon: 'map', color: '#6366f1', value: tours.filter(t => t.type === 'regular').length, label: 'Regular Tours' },
+                  { icon: 'layers', color: '#06d6a0', value: tours.filter(t => t.type === 'combo').length, label: 'Combo Packages' },
+                  { icon: 'place', color: '#f72585', value: new Set(tours.map(t => t.location)).size, label: 'Unique Locations' },
+                  { icon: 'groups', color: '#ffbe0b', value: tours.reduce((sum, t) => sum + t.max_capacity, 0), label: 'Total Capacity' }
+                ].map((stat, i) => (
+                  <View key={i} style={styles.statCard}>
+                    <MaterialIcons name={stat.icon} size={32} color={stat.color} />
+                    <Text style={styles.statValue}>{stat.value}</Text>
+                    <Text style={styles.statLabel}>{stat.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.exportSection}>
+              <View style={styles.exportHeader}>
+                <Text style={styles.exportTitle}>Business Intelligence Export</Text>
+                <Text style={styles.exportSubtitle}>Generate multi-sheet Excel report with chart-ready data</Text>
+              </View>
+              
+              <TouchableOpacity 
+                style={[styles.exportButton, exporting && styles.exportButtonDisabled]} 
+                onPress={exportToExcel} 
+                disabled={exporting}
+              >
+                <MaterialIcons name={exporting ? 'hourglass-empty' : 'assessment'} size={24} color="#fff" />
+                <Text style={styles.exportText}>
+                  {exporting ? 'Generating Excel Report...' : 'Export Excel Report'}
+                </Text>
+              </TouchableOpacity>
+              
+              {exporting && (
+                <View style={styles.exportProgress}>
+                  <ActivityIndicator size="small" color="#6366f1" />
+                  <Text style={styles.exportProgressText}>Creating Excel report with charts...</Text>
                 </View>
-                <View style={styles.locationMetric}>
-                  <Text style={styles.locationCount}>{loc.count}</Text>
-                  <Text style={styles.locationLabel}>tours</Text>
+              )}
+              
+              <View style={styles.exportFeatures}>
+                <Text style={styles.featuresTitle}>Report Includes:</Text>
+                <View style={styles.featuresList}>
+                  {[
+                    { icon: 'dashboard', text: 'Executive Summary Dashboard' },
+                    { icon: 'trending-up', text: 'Monthly Performance Analysis' },
+                    { icon: 'inventory', text: 'Complete Tour Portfolio Analytics' },
+                    { icon: 'people', text: 'Customer Booking Intelligence' },
+                    { icon: 'location-on', text: 'Location Performance Metrics' },
+                    { icon: 'attach-money', text: 'Financial Performance Dashboard' },
+                    { icon: 'show-chart', text: 'Chart Data for Visualizations' }
+                  ].map((feature, i) => (
+                    <View key={i} style={styles.featureItem}>
+                      <MaterialIcons name={feature.icon} size={16} color="#6366f1" />
+                      <Text style={styles.featureText}>{feature.text}</Text>
+                    </View>
+                  ))}
                 </View>
               </View>
-            )) : (
-              <View style={styles.noDataContainer}>
-                <MaterialIcons name="location-off" size={48} color="#cbd5e1" />
-                <Text style={styles.noDataText}>No location data available</Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.statsSection}>
-          <View style={styles.statsHeader}>
-            <Text style={styles.statsTitle}>Tour Portfolio</Text>
-            <Text style={styles.statsSubtitle}>Comprehensive tour statistics</Text>
-          </View>
-          <View style={styles.statsGrid}>
-            {[
-              { icon: 'map', color: '#6366f1', value: tours.filter(t => t.type === 'regular').length, label: 'Regular Tours' },
-              { icon: 'layers', color: '#06d6a0', value: tours.filter(t => t.type === 'combo').length, label: 'Combo Packages' },
-              { icon: 'place', color: '#f72585', value: new Set(tours.map(t => t.location)).size, label: 'Unique Locations' },
-              { icon: 'groups', color: '#ffbe0b', value: tours.reduce((sum, t) => sum + t.max_capacity, 0), label: 'Total Capacity' }
-            ].map((stat, i) => (
-              <View key={i} style={styles.statCard}>
-                <MaterialIcons name={stat.icon} size={32} color={stat.color} />
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statLabel}>{stat.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.exportSection}>
-          <View style={styles.exportHeader}>
-            <Text style={styles.exportTitle}>Business Intelligence Export</Text>
-            <Text style={styles.exportSubtitle}>Generate multi-sheet Excel report with chart-ready data</Text>
-          </View>
-          
-          <TouchableOpacity 
-            style={[styles.exportButton, exporting && styles.exportButtonDisabled]} 
-            onPress={exportToExcel} 
-            disabled={exporting}
-          >
-            <MaterialIcons name={exporting ? 'hourglass-empty' : 'assessment'} size={24} color="#fff" />
-            <Text style={styles.exportText}>
-              {exporting ? 'Generating Excel Report...' : 'Export Excel Report'}
-            </Text>
-          </TouchableOpacity>
-          
-          {exporting && (
-            <View style={styles.exportProgress}>
-              <ActivityIndicator size="small" color="#6366f1" />
-              <Text style={styles.exportProgressText}>Creating Excel report with charts...</Text>
             </View>
-          )}
-          
-          <View style={styles.exportFeatures}>
-            <Text style={styles.featuresTitle}>Report Includes:</Text>
-            <View style={styles.featuresList}>
-              {[
-                { icon: 'dashboard', text: 'Executive Summary Dashboard' },
-                { icon: 'trending-up', text: 'Monthly Performance Analysis' },
-                { icon: 'inventory', text: 'Complete Tour Portfolio Analytics' },
-                { icon: 'people', text: 'Customer Booking Intelligence' },
-                { icon: 'location-on', text: 'Location Performance Metrics' },
-                { icon: 'attach-money', text: 'Financial Performance Dashboard' },
-                { icon: 'show-chart', text: 'Chart Data for Visualizations' }
-              ].map((feature, i) => (
-                <View key={i} style={styles.featureItem}>
-                  <MaterialIcons name={feature.icon} size={16} color="#6366f1" />
-                  <Text style={styles.featureText}>{feature.text}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-        
-        <View style={styles.bottomSpacer} />
+            
+            <View style={styles.bottomSpacer} />
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -702,4 +731,58 @@ const styles = StyleSheet.create({
   featureItem: { flexDirection: 'row', alignItems: 'center' },
   featureText: { fontSize: 14, color: '#64748B', marginLeft: 12, flex: 1 },
   bottomSpacer: { height: 40 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: width * 0.85,
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#00355F',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalSuccess: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#06d6a0',
+  },
+  modalError: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#f72585',
+  },
+  modalIcon: {
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#00355F',
+    marginBottom: 12,
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButton: {
+    backgroundColor: '#00355F',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
 });

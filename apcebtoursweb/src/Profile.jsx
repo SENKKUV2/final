@@ -402,9 +402,9 @@ function Profile() {
   onClick={() => updateState({ isEditingProfile: true })}
   className="text-white px-6 py-2 rounded-full transition duration-300 flex items-center justify-center gap-2"
   style={{
-    backgroundColor: '#00355f',        // AP Cebu Tours blue
+    backgroundColor: '#00355f',
   }}
-  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')} // lighter hover blue
+  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')}
   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
 >
   <svg
@@ -427,9 +427,9 @@ function Profile() {
   onClick={() => updateState({ isChangingPassword: true })}
   className="text-white px-6 py-2 rounded-full transition duration-300"
   style={{
-    backgroundColor: '#00355f', // AP Cebu Tours blue
+    backgroundColor: '#00355f',
   }}
-  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')} // lighter hover
+  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')}
   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
 >
   Change Password
@@ -570,7 +570,24 @@ function Profile() {
                           <td className="px-6 py-4">
                             <div className="flex flex-col gap-2">
                               {(state.activeTab === 'status' || state.activeTab === 'all') && booking.status === 'pending' ? (
-                                <button onClick={() => handleCancelRequest(booking.id)} disabled={state.requestingCancel === booking.id} className="bg-orange-600 text-white px-4 py-1.5 rounded-lg hover:bg-orange-700 text-sm font-medium disabled:opacity-50 transition duration-200 flex items-center justify-center gap-2">
+                                <button 
+                                  onClick={() => handleCancelRequest(booking.id)} 
+                                  disabled={state.requestingCancel === booking.id} 
+                                  className="text-white px-4 py-1.5 rounded-lg text-sm font-medium disabled:opacity-50 transition duration-200 flex items-center justify-center gap-2"
+                                  style={{
+                                    backgroundColor: state.requestingCancel === booking.id ? '#9ca3af' : '#00355f',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (state.requestingCancel !== booking.id) {
+                                      e.currentTarget.style.backgroundColor = '#004a84';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (state.requestingCancel !== booking.id) {
+                                      e.currentTarget.style.backgroundColor = '#00355f';
+                                    }
+                                  }}
+                                >
                                   {state.requestingCancel === booking.id ? <><FaSpinner className="animate-spin h-4 w-4" /> Requesting...</> : 'Request Cancel'}
                                 </button>
                               ) : booking.status === 'cancel-requested' ? (
@@ -580,7 +597,17 @@ function Profile() {
                                 state.feedbackSubmitted.has(booking.id) ? (
                                   <span className="text-xs text-gray-500">Feedback Submitted</span>
                                 ) : (
-                                  <button onClick={() => updateState({ feedbackBookingId: booking.id, feedbackData: { rating: 0, comments: '' }, modals: { ...state.modals, feedback: true } })} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 text-sm font-medium transition duration-200">Provide Feedback</button>
+                                  <button 
+                                    onClick={() => updateState({ feedbackBookingId: booking.id, feedbackData: { rating: 0, comments: '' }, modals: { ...state.modals, feedback: true } })} 
+                                    className="text-white px-4 py-1.5 rounded-lg text-sm font-medium transition duration-200"
+                                    style={{
+                                      backgroundColor: '#00355f',
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
+                                  >
+                                    Provide Feedback
+                                  </button>
                                 )
                               )}
                               {booking.status === 'confirmed' && (state.activeTab === 'status' || state.activeTab === 'all') && !isRejection && <div className="text-xs text-gray-500">Contact support for cancellation</div>}
@@ -625,7 +652,24 @@ function Profile() {
       } footer={
         <>
           <button onClick={() => updateState({ isEditingProfile: false })} className="px-5 py-2.5 text-gray-600 bg-white bg-opacity-50 border border-gray-300 rounded-lg hover:bg-opacity-70 transition-all duration-200">Cancel</button>
-          <button onClick={handleProfileUpdate} disabled={state.updating.profile} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2">
+          <button 
+            onClick={handleProfileUpdate} 
+            disabled={state.updating.profile} 
+            className="px-5 py-2.5 text-white rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
+            style={{
+              backgroundColor: state.updating.profile ? '#9ca3af' : '#00355f',
+            }}
+            onMouseEnter={(e) => {
+              if (!state.updating.profile) {
+                e.currentTarget.style.backgroundColor = '#004a84';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!state.updating.profile) {
+                e.currentTarget.style.backgroundColor = '#00355f';
+              }
+            }}
+          >
             {state.updating.profile && <FaSpinner className="animate-spin h-4 w-4" />}
             {state.updating.profile ? 'Saving...' : 'Save Profile'}
           </button>
@@ -643,7 +687,24 @@ function Profile() {
       } footer={
         <>
           <button onClick={() => updateState({ isChangingPassword: false, passwordData: { oldPassword: '', newPassword: '', confirmPassword: '' }, passwordError: '' })} className="px-5 py-2.5 text-gray-600 bg-white bg-opacity-50 border border-gray-300 rounded-lg hover:bg-opacity-70 transition-all duration-200">Cancel</button>
-          <button onClick={handlePasswordChange} disabled={state.updating.password} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2">
+          <button 
+            onClick={handlePasswordChange} 
+            disabled={state.updating.password} 
+            className="px-5 py-2.5 text-white rounded-lg transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
+            style={{
+              backgroundColor: state.updating.password ? '#9ca3af' : '#00355f',
+            }}
+            onMouseEnter={(e) => {
+              if (!state.updating.password) {
+                e.currentTarget.style.backgroundColor = '#004a84';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!state.updating.password) {
+                e.currentTarget.style.backgroundColor = '#00355f';
+              }
+            }}
+          >
             {state.updating.password && <FaSpinner className="animate-spin h-4 w-4" />}
             {state.updating.password ? 'Updating...' : 'Change Password'}
           </button>
@@ -653,16 +714,46 @@ function Profile() {
       <Modal show={state.modals.logout} setShow={(val) => updateState({ modals: { ...state.modals, logout: val } })} title="Confirm Logout" children={<p className="text-gray-600 mb-6">Are you sure you want to log out?</p>} footer={
         <>
           <button onClick={() => updateState({ modals: { ...state.modals, logout: false } })} className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">Cancel</button>
-          <button onClick={handleLogout} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Logout</button>
+          <button 
+            onClick={handleLogout} 
+            className="px-4 py-2 text-white rounded-lg transition-colors"
+            style={{
+              backgroundColor: '#00355f',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
+          >
+            Logout
+          </button>
         </>
       } />
 
       <Modal show={state.modals.success} setShow={(val) => updateState({ modals: { ...state.modals, success: val } })} title="Success" children={<p className="text-gray-600 mb-6">{state.messages.success}</p>} footer={
-        <button onClick={() => updateState({ modals: { ...state.modals, success: false } })} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">OK</button>
+        <button 
+          onClick={() => updateState({ modals: { ...state.modals, success: false } })} 
+          className="px-4 py-2 text-white rounded-lg transition-colors"
+          style={{
+            backgroundColor: '#00355f',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
+        >
+          OK
+        </button>
       } />
 
       <Modal show={state.modals.error} setShow={(val) => updateState({ modals: { ...state.modals, error: val } })} title="Error" children={<p className="text-gray-600 mb-6">{state.messages.error}</p>} footer={
-        <button onClick={() => updateState({ modals: { ...state.modals, error: false } })} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">OK</button>
+        <button 
+          onClick={() => updateState({ modals: { ...state.modals, error: false } })} 
+          className="px-4 py-2 text-white rounded-lg transition-colors"
+          style={{
+            backgroundColor: '#00355f',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
+        >
+          OK
+        </button>
       } />
 
       <Modal show={state.modals.feedback} setShow={(val) => updateState({ modals: { ...state.modals, feedback: val } })} title={`Feedback for ${state.bookings.find(b => b.id === state.feedbackBookingId)?.tours?.title || 'Tour'}`} children={
@@ -683,7 +774,17 @@ function Profile() {
       } footer={
         <>
           <button onClick={() => updateState({ modals: { ...state.modals, feedback: false } })} className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">Cancel</button>
-          <button onClick={handleFeedbackSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Submit Feedback</button>
+          <button 
+            onClick={handleFeedbackSubmit} 
+            className="px-4 py-2 text-white rounded-lg transition-colors"
+            style={{
+              backgroundColor: '#00355f',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#004a84')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#00355f')}
+          >
+            Submit Feedback
+          </button>
         </>
       } />
     </>
