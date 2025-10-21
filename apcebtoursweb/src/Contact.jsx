@@ -6,59 +6,73 @@ import { useAuth } from "./AuthContext";
 import Chatbot from "./AI/Chatbot";
 import { FaRobot } from "react-icons/fa";
 
+// Modal Component (from Profile/Tours)
+const Modal = ({ show, setShow, title, children, footer, maxWidth = "max-w-md" }) =>
+  show && (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div className={`bg-white/90 backdrop-blur-md rounded-2xl ${maxWidth} w-full shadow-xl border border-gray-100/50 max-h-[90vh] overflow-y-auto`}>
+        <div className="flex justify-between p-6">
+          <h2 id="modal-title" className="text-2xl font-semibold text-gray-900">{title}</h2>
+          <button
+            onClick={() => setShow(false)}
+            className="text-gray-600 hover:text-gray-800 text-xl"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="p-6">{children}</div>
+        {footer && <div className="p-6 flex justify-end space-x-4">{footer}</div>}
+      </div>
+    </div>
+  );
+
 const Contact = () => {
-  const { user, setUser } = useAuth(); // Use global user state from AuthContext
+  const { user, setUser } = useAuth();
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     subject: '',
     message: ''
   });
-  const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
-  const [isChatbotOpen, setIsChatbotOpen] = useState(false); // Chatbot state
-
-  // Global auth modal states
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
-
-  // Auth form states
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [middleInitial, setMiddleInitial] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  // Logout modal state
+  const [authForm, setAuthForm] = useState({
+    email: "",
+    password: "",
+    firstName: "",
+    lastName: "",
+    middleInitial: "",
+    confirmPassword: ""
+  });
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-
-  // Success and error modal states
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const resetAuthForm = () => {
-    setEmail("");
-    setPassword("");
-    setFirstName("");
-    setLastName("");
-    setMiddleInitial("");
-    setConfirmPassword("");
-  };
+  const resetAuthForm = () =>
+    setAuthForm({
+      email: "",
+      password: "",
+      firstName: "",
+      lastName: "",
+      middleInitial: "",
+      confirmPassword: ""
+    });
 
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthLoading(true);
-
     try {
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+          email: authForm.email,
+          password: authForm.password,
         });
         if (error) throw error;
         setSuccessMessage("Login successful!");
@@ -66,17 +80,17 @@ const Contact = () => {
         setShowAuthModal(false);
         resetAuthForm();
       } else {
-        if (password !== confirmPassword) {
+        if (authForm.password !== authForm.confirmPassword) {
           throw new Error("Passwords do not match");
         }
         const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
+          email: authForm.email,
+          password: authForm.password,
           options: {
             data: {
-              first_name: firstName,
-              last_name: lastName,
-              middle_initial: middleInitial,
+              first_name: authForm.firstName,
+              last_name: authForm.lastName,
+              middle_initial: authForm.middleInitial,
             },
           },
         });
@@ -129,7 +143,6 @@ const Contact = () => {
 
   useEffect(() => {
     getUser();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setUser(session?.user ?? null);
@@ -140,7 +153,6 @@ const Contact = () => {
         setLoadingUser(false);
       }
     );
-
     return () => subscription.unsubscribe();
   }, [setUser]);
 
@@ -170,8 +182,6 @@ const Contact = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-
-    // 1️⃣ Save the contact form data into Supabase table
     const { error: dbError } = await supabase
       .from("contacts")
       .insert([
@@ -192,7 +202,6 @@ const Contact = () => {
       return;
     }
 
-    // 2️⃣ Call Supabase Edge Function to send email
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-contact-email`, {
         method: "POST",
@@ -268,11 +277,7 @@ const Contact = () => {
         onSignupClick={handleSignupClick}
         onChatbotClick={() => setIsChatbotOpen(!isChatbotOpen)}
       />
-
-      {/* Chatbot Modal */}
       <Chatbot user={user} isOpen={isChatbotOpen} setIsOpen={setIsChatbotOpen} />
-
-      {/* Floating Chatbot Button */}
       <button
         onClick={() => setIsChatbotOpen(!isChatbotOpen)}
         className="fixed bottom-4 right-4 text-white p-4 rounded-full shadow-lg hover:opacity-90 transition-all z-40"
@@ -280,8 +285,6 @@ const Contact = () => {
       >
         <FaRobot size={24} />
       </button>
-
-      {/* Global Auth Modal */}
       <AuthModal
         showAuthModal={showAuthModal}
         setShowAuthModal={setShowAuthModal}
@@ -289,43 +292,25 @@ const Contact = () => {
         setIsLogin={setIsLogin}
         authLoading={authLoading}
         handleAuth={handleAuth}
-        email={email}
-        setEmail={setEmail}
-        password={password}
-        setPassword={setPassword}
-        firstName={firstName}
-        setFirstName={setFirstName}
-        lastName={lastName}
-        setLastName={setLastName}
-        middleInitial={middleInitial}
-        setMiddleInitial={setMiddleInitial}
-        confirmPassword={confirmPassword}
-        setConfirmPassword={setConfirmPassword}
+        authForm={authForm}
+        setAuthForm={setAuthForm}
         resetAuthForm={resetAuthForm}
       />
-
-      {/* Logout Confirmation Modal */}
       <LogoutModal
         showLogoutModal={showLogoutModal}
         setShowLogoutModal={setShowLogoutModal}
         handleLogout={handleLogout}
       />
-
-      {/* Success Modal */}
       <SuccessModal
         showSuccessModal={showSuccessModal}
         setShowSuccessModal={setShowSuccessModal}
         message={successMessage}
       />
-
-      {/* Error Modal */}
       <ErrorModal
         showErrorModal={showErrorModal}
         setShowErrorModal={setShowErrorModal}
         message={errorMessage}
       />
-
-      {/* Header Section */}
       <div className="text-white py-16" style={{ background: 'linear-gradient(to right, #00355f, #003d6b)' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h1 className="text-4xl md:text-5xl font-bold mb-4 text-white">
@@ -336,17 +321,14 @@ const Contact = () => {
           </p>
         </div>
       </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid lg:grid-cols-3 gap-12">
-          {/* Contact Form */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-xl p-8" style={{ border: '1px solid #f9fafb' }}>
               <div className="mb-8">
                 <h2 className="text-3xl font-bold mb-2" style={{ color: '#00355f' }}>Send us a Message</h2>
                 <p style={{ color: '#6b7280' }}>Fill out the form below and we'll respond as soon as possible.</p>
               </div>
-
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-6">
                   <div>
@@ -360,18 +342,10 @@ const Contact = () => {
                       required
                       value={formData.fullName}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 rounded-lg focus:ring-2 focus:outline-none transition-colors duration-300"
-                      style={{ 
-                        border: '1px solid #f9fafb',
-                        focusRingColor: '#eec218',
-                        focusBorderColor: '#eec218'
-                      }}
+                      className="w-full px-4 py-3 rounded-lg bg-white/50 border border-gray-300 focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-colors duration-300"
                       placeholder="Enter your full name"
-                      onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                      onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
                     />
                   </div>
-                  
                   <div>
                     <label htmlFor="email" className="block text-sm font-medium mb-2" style={{ color: '#6b7280' }}>
                       Email Address *
@@ -383,20 +357,12 @@ const Contact = () => {
                       required
                       value={formData.email}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 rounded-lg focus:ring-2 focus:outline-none transition-colors duration-300"
-                      style={{ 
-                        border: '1px solid #f9fafb',
-                        focusRingColor: '#eec218',
-                        focusBorderColor: '#eec218'
-                      }}
+                      className="w-full px-4 py-3 rounded-lg bg-white/50 border border-gray-300 focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-colors duration-300"
                       placeholder="Enter your email address"
                       disabled={user}
-                      onFocus={(e) => !user && (e.target.style.borderColor = '#eec218')}
-                      onBlur={(e) => !user && (e.target.style.borderColor = '#f9fafb')}
                     />
                   </div>
                 </div>
-
                 <div>
                   <label htmlFor="subject" className="block text-sm font-medium mb-2" style={{ color: '#6b7280' }}>
                     Subject *
@@ -408,18 +374,10 @@ const Contact = () => {
                     required
                     value={formData.subject}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-lg focus:ring-2 focus:outline-none transition-colors duration-300"
-                    style={{ 
-                      border: '1px solid #f9fafb',
-                      focusRingColor: '#eec218',
-                      focusBorderColor: '#eec218'
-                    }}
+                    className="w-full px-4 py-3 rounded-lg bg-white/50 border border-gray-300 focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-colors duration-300"
                     placeholder="What's this about?"
-                    onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                    onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
                   />
                 </div>
-
                 <div>
                   <label htmlFor="message" className="block text-sm font-medium mb-2" style={{ color: '#6b7280' }}>
                     Message *
@@ -431,18 +389,10 @@ const Contact = () => {
                     rows={6}
                     value={formData.message}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-lg focus:ring-2 focus:outline-none transition-colors duration-300 resize-none"
-                    style={{ 
-                      border: '1px solid #f9fafb',
-                      focusRingColor: '#eec218',
-                      focusBorderColor: '#eec218'
-                    }}
+                    className="w-full px-4 py-3 rounded-lg bg-white/50 border border-gray-300 focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-colors duration-300 resize-none"
                     placeholder="Tell us more about your inquiry..."
-                    onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                    onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
                   />
                 </div>
-
                 <button
                   type="submit"
                   disabled={isSubmitting}
@@ -473,15 +423,12 @@ const Contact = () => {
               </form>
             </div>
           </div>
-
-          {/* Contact Information */}
           <div className="lg:col-span-1">
             <div className="rounded-2xl shadow-xl text-white p-8" style={{ background: 'linear-gradient(to bottom right, #00355f, #003d6b)' }}>
               <h3 className="text-2xl font-bold mb-6">Get in Touch</h3>
               <p className="mb-8 leading-relaxed" style={{ color: '#f9fafb' }}>
                 Ready to explore the Philippines? Contact us today and let's plan your perfect adventure together.
               </p>
-
               <div className="space-y-6">
                 {contactInfo.map((item, index) => {
                   const IconComponent = item.icon;
@@ -499,8 +446,6 @@ const Contact = () => {
                   );
                 })}
               </div>
-
-              {/* Quick Response Promise */}
               <div className="mt-8 rounded-lg p-6" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}>
                 <h4 className="font-semibold mb-2" style={{ color: '#eec218' }}>Our Promise</h4>
                 <p className="text-sm leading-relaxed" style={{ color: '#f9fafb' }}>
@@ -508,15 +453,19 @@ const Contact = () => {
                 </p>
               </div>
             </div>
-
-            {/* Map Placeholder */}
             <div className="mt-8 bg-white rounded-2xl shadow-xl overflow-hidden" style={{ border: '1px solid #f9fafb' }}>
-              <div className="h-64 flex items-center justify-center" style={{ background: 'linear-gradient(to bottom right, #f9fafb, rgba(238, 194, 24, 0.1))' }}>
-                <div className="text-center" style={{ color: '#6b7280' }}>
-                  <MapPin className="w-12 h-12 mx-auto mb-3" />
-                  <h4 className="font-semibold mb-1" style={{ color: '#00355f' }}>Interactive Map</h4>
-                  <p className="text-sm">Google Maps integration coming soon</p>
-                </div>
+              <div className="h-64 relative">
+                <iframe
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d125290.46903486244!2d123.80677597159772!3d10.315708154478!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999258ddd0d1d%3A0x4c34cf8f05fd0d0!2sCebu%20City%2C%20Cebu%2C%20Philippines!5e0!3m2!1sen!2sph!4v1635000000000!5m2!1sen!2sph"
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title="Cebu City Location Map"
+                  className="absolute inset-0"
+                />
               </div>
               <div className="p-4" style={{ backgroundColor: '#f9fafb' }}>
                 <p className="text-sm text-center" style={{ color: '#6b7280' }}>
@@ -526,8 +475,6 @@ const Contact = () => {
             </div>
           </div>
         </div>
-
-        {/* FAQ Section */}
         <div className="mt-16 rounded-2xl p-8" style={{ backgroundColor: '#f9fafb' }}>
           <div className="text-center mb-8">
             <h3 className="text-3xl font-bold mb-4" style={{ color: '#00355f' }}>Frequently Asked Questions</h3>
@@ -535,7 +482,6 @@ const Contact = () => {
               Quick answers to common questions about our tours and services.
             </p>
           </div>
-
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             <div>
               <h4 className="font-semibold mb-2" style={{ color: '#00355f' }}>How do I book a tour?</h4>
@@ -564,8 +510,6 @@ const Contact = () => {
           </div>
         </div>
       </div>
-
-      {/* Footer */}
       <footer className="bg-gray-800 text-white py-12 px-6">
         <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-8">
           <div>
@@ -623,356 +567,221 @@ const AuthModal = ({
   setIsLogin,
   authLoading,
   handleAuth,
-  email,
-  setEmail,
-  password,
-  setPassword,
-  firstName,
-  setFirstName,
-  lastName,
-  setLastName,
-  middleInitial,
-  setMiddleInitial,
-  confirmPassword,
-  setConfirmPassword,
-  resetAuthForm,
+  authForm,
+  setAuthForm,
+  resetAuthForm
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  if (!showAuthModal) return null;
-
-  const handleCloseModal = () => {
-    setShowAuthModal(false);
-    resetAuthForm();
-    setShowPassword(false);
-    setShowConfirmPassword(false);
-  };
+  const PasswordInput = ({ value, onChange, placeholder, show, setShow }) => (
+    <div className="relative">
+      <input
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        required
+        className="w-full px-4 py-2.5 bg-white/50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-all placeholder-gray-400"
+        placeholder={placeholder}
+        minLength={6}
+      />
+      <button
+        type="button"
+        onClick={() => setShow(!show)}
+        className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700"
+        aria-label="Toggle password visibility"
+      >
+        {show ? (
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.418 0-8-3.582-8-8s3.582-8 8-8c1.675 0 3.245.516 4.575 1.41M15 12a3 3 0 11-6 0 3 3 0 016 0zm6.75 0h.008v.008h-.008V12zm-18 0h-.008v.008h.008V12z" />
+          </svg>
+        ) : (
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+        )}
+      </button>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold" style={{ color: "#00355f" }}>
-              {isLogin ? "Sign In" : "Create Account"}
-            </h2>
-            <button
-              onClick={handleCloseModal}
-              className="text-xl hover:opacity-70"
-              style={{ color: '#6b7280' }}
-              aria-label="Close"
-            >
-              ×
-            </button>
-          </div>
-
-          <form onSubmit={handleAuth} className="space-y-4">
-            {!isLogin && (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: '#6b7280' }}>
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      required={!isLogin}
-                      className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2"
-                      style={{ 
-                        border: '1px solid #f9fafb',
-                        focusRingColor: '#eec218'
-                      }}
-                      placeholder="First Name"
-                      onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                      onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: '#6b7280' }}>
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      required={!isLogin}
-                      className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2"
-                      style={{ 
-                        border: '1px solid #f9fafb',
-                        focusRingColor: '#eec218'
-                      }}
-                      placeholder="Last Name"
-                      onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                      onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: '#6b7280' }}>
-                      M.I. (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={middleInitial}
-                      onChange={(e) => setMiddleInitial(e.target.value)}
-                      maxLength={1}
-                      className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2"
-                      style={{ 
-                        border: '1px solid #f9fafb',
-                        focusRingColor: '#eec218'
-                      }}
-                      placeholder="M.I."
-                      onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                      onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
+    <Modal
+      show={showAuthModal}
+      setShow={setShowAuthModal}
+      title={isLogin ? "Sign In" : "Create Account"}
+      maxWidth="max-w-md"
+    >
+      <form onSubmit={handleAuth} className="space-y-4">
+        {!isLogin && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: '#6b7280' }}>
-                Email
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2"
-                style={{ 
-                  border: '1px solid #f9fafb',
-                  focusRingColor: '#eec218'
-                }}
-                placeholder="Enter your email"
-                onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
+                type="text"
+                value={authForm.firstName}
+                onChange={(e) => setAuthForm({ ...authForm, firstName: e.target.value })}
+                required={!isLogin}
+                className="w-full px-4 py-2.5 bg-white/50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-all placeholder-gray-400"
+                placeholder="First Name"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: '#6b7280' }}>
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2"
-                  style={{ 
-                    border: '1px solid #f9fafb',
-                    focusRingColor: '#eec218'
-                  }}
-                  placeholder="Enter your password"
-                  minLength={6}
-                  onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                  onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 hover:opacity-70"
-                  style={{ color: '#6b7280' }}
-                  aria-label="Toggle password visibility"
-                >
-                  {showPassword ? (
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.418 0-8-3.582-8-8s3.582-8 8-8c1.675 0 3.245.516 4.575 1.41M15 12a3 3 0 11-6 0 3 3 0 016 0zm6.75 0h.008v.008h-.008V12zm-18 0h-.008v.008h.008V12z" />
-                    </svg>
-                  ) : (
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
-              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+              <input
+                type="text"
+                value={authForm.lastName}
+                onChange={(e) => setAuthForm({ ...authForm, lastName: e.target.value })}
+                required={!isLogin}
+                className="w-full px-4 py-2.5 bg-white/50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-all placeholder-gray-400"
+                placeholder="Last Name"
+              />
             </div>
-
-            {!isLogin && (
-              <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: '#6b7280' }}>
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required={!isLogin}
-                    className="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2"
-                    style={{ 
-                      border: '1px solid #f9fafb',
-                      focusRingColor: '#eec218'
-                    }}
-                    placeholder="Confirm your password"
-                    minLength={6}
-                    onFocus={(e) => e.target.style.borderColor = '#eec218'}
-                    onBlur={(e) => e.target.style.borderColor = '#f9fafb'}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 hover:opacity-70"
-                    style={{ color: '#6b7280' }}
-                    aria-label="Toggle confirm password visibility"
-                  >
-                    {showConfirmPassword ? (
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.418 0-8-3.582-8-8s3.582-8 8-8c1.675 0 3.245.516 4.575 1.41M15 12a3 3 0 11-6 0 3 3 0 016 0zm6.75 0h.008v.008h-.008V12zm-18 0h-.008v.008h.008V12z" />
-                      </svg>
-                    ) : (
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full py-3 font-semibold rounded-lg transition-colors text-white"
-              style={{
-                backgroundColor: authLoading ? "#6b7280" : "#00355f",
-              }}
-            >
-              {authLoading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
-            </button>
-          </form>
-
-          <div className="mt-4 text-center">
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-sm font-medium hover:underline"
-              style={{ color: "#00355f" }}
-            >
-              {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
-            </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">M.I. (Optional)</label>
+              <input
+                type="text"
+                value={authForm.middleInitial}
+                onChange={(e) => setAuthForm({ ...authForm, middleInitial: e.target.value })}
+                maxLength={1}
+                className="w-full px-4 py-2.5 bg-white/50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-all placeholder-gray-400"
+                placeholder="M.I."
+              />
+            </div>
           </div>
+        )}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input
+            type="email"
+            value={authForm.email}
+            onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+            required
+            className="w-full px-4 py-2.5 bg-white/50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#eec218] focus:border-[#eec218] transition-all placeholder-gray-400"
+            placeholder="Enter your email"
+          />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <PasswordInput
+            value={authForm.password}
+            onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+            placeholder="Enter your password"
+            show={showPassword}
+            setShow={setShowPassword}
+          />
+        </div>
+        {!isLogin && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+            <PasswordInput
+              value={authForm.confirmPassword}
+              onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+              placeholder="Confirm your password"
+              show={showConfirmPassword}
+              setShow={setShowConfirmPassword}
+            />
+          </div>
+        )}
+        <button
+          type="submit"
+          disabled={authLoading}
+          className="w-full py-3 font-semibold rounded-lg transition-colors text-white"
+          style={{
+            backgroundColor: authLoading ? "#9ca3af" : "#00355f",
+          }}
+          onMouseEnter={(e) => !authLoading && (e.currentTarget.style.backgroundColor = "#004a84")}
+          onMouseLeave={(e) => !authLoading && (e.currentTarget.style.backgroundColor = "#00355f")}
+        >
+          {authLoading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
+        </button>
+      </form>
+      <div className="mt-4 text-center">
+        <button
+          onClick={() => setIsLogin(!isLogin)}
+          className="text-sm font-medium hover:underline"
+          style={{ color: "#00355f" }}
+        >
+          {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 };
 
-// Logout Confirmation Modal Component
-const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => {
-  if (!showLogoutModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-sm w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: "#00355f" }}>
-            Confirm Logout
-          </h2>
-          <button
-            onClick={() => setShowLogoutModal(false)}
-            className="text-xl hover:opacity-70"
-            style={{ color: '#6b7280' }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <p className="mb-6" style={{ color: '#6b7280' }}>Are you sure you want to log out?</p>
-        <div className="flex justify-end space-x-4">
-          <button
-            onClick={() => setShowLogoutModal(false)}
-            className="px-4 py-2 font-medium rounded-lg hover:opacity-80"
-            style={{ color: '#6b7280' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 rounded-lg font-medium transition-colors text-white"
-            style={{ backgroundColor: "#00355f" }}
-          >
-            Logout
-          </button>
-        </div>
-      </div>
+// LogoutModal Component
+const LogoutModal = ({ showLogoutModal, setShowLogoutModal, handleLogout }) => (
+  <Modal
+    show={showLogoutModal}
+    setShow={setShowLogoutModal}
+    title="Confirm Logout"
+    maxWidth="max-w-sm"
+  >
+    <p className="text-gray-600 mb-6">Are you sure you want to log out?</p>
+    <div className="flex justify-end space-x-4">
+      <button
+        onClick={() => setShowLogoutModal(false)}
+        className="px-5 py-2.5 text-gray-600 bg-white/50 border border-gray-300 rounded-lg hover:bg-opacity-70"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={handleLogout}
+        className="px-4 py-2 rounded-lg font-medium transition-colors text-white"
+        style={{ backgroundColor: "#00355f" }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#004a84")}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#00355f")}
+      >
+        Logout
+      </button>
     </div>
-  );
-};
+  </Modal>
+);
 
-// Success Modal Component
-const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => {
-  if (!showSuccessModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-sm w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: "#00355f" }}>
-            Success
-          </h2>
-          <button
-            onClick={() => setShowSuccessModal(false)}
-            className="text-xl hover:opacity-70"
-            style={{ color: '#6b7280' }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <p className="mb-6" style={{ color: '#6b7280' }}>{message}</p>
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowSuccessModal(false)}
-            className="px-4 py-2 rounded-lg font-medium transition-colors text-white"
-            style={{ backgroundColor: "#00355f" }}
-          >
-            OK
-          </button>
-        </div>
-      </div>
+// SuccessModal Component
+const SuccessModal = ({ showSuccessModal, setShowSuccessModal, message }) => (
+  <Modal
+    show={showSuccessModal}
+    setShow={setShowSuccessModal}
+    title="Success"
+    maxWidth="max-w-sm"
+  >
+    <p className="text-gray-600 mb-6">{message}</p>
+    <div className="flex justify-end">
+      <button
+        onClick={() => setShowSuccessModal(false)}
+        className="px-4 py-2 rounded-lg font-medium transition-colors text-white"
+        style={{ backgroundColor: "#00355f" }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#004a84")}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#00355f")}
+      >
+        OK
+      </button>
     </div>
-  );
-};
+  </Modal>
+);
 
-// Error Modal Component
-const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => {
-  if (!showErrorModal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-xl max-w-sm w-full p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold" style={{ color: "#00355f" }}>
-            Error
-          </h2>
-          <button
-            onClick={() => setShowErrorModal(false)}
-            className="text-xl hover:opacity-70"
-            style={{ color: '#6b7280' }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <p className="mb-6" style={{ color: '#6b7280' }}>{message}</p>
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowErrorModal(false)}
-            className="px-4 py-2 rounded-lg font-medium transition-colors text-white"
-            style={{ backgroundColor: "#00355f" }}
-          >
-            OK
-          </button>
-        </div>
-      </div>
+// ErrorModal Component
+const ErrorModal = ({ showErrorModal, setShowErrorModal, message }) => (
+  <Modal
+    show={showErrorModal}
+    setShow={setShowErrorModal}
+    title="Error"
+    maxWidth="max-w-sm"
+  >
+    <p className="text-gray-600 mb-6">{message}</p>
+    <div className="flex justify-end">
+      <button
+        onClick={() => setShowErrorModal(false)}
+        className="px-4 py-2 rounded-lg font-medium transition-colors text-white"
+        style={{ backgroundColor: "#00355f" }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#004a84")}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#00355f")}
+      >
+        OK
+      </button>
     </div>
-  );
-};
+  </Modal>
+);
 
 export default Contact;
